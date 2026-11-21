@@ -81,16 +81,19 @@ export function MoneyInput({
   onChange,
   placeholder,
   id,
+  autoFocus,
 }: {
   value: number | null;
   onChange: (v: number | null) => void;
   placeholder?: string;
   id?: string;
+  autoFocus?: boolean;
 }) {
   return (
     <div className="neu-pressed flex items-center rounded-2xl px-4 focus-within:ring-1 focus-within:ring-stone/60">
       <input
         id={id}
+        autoFocus={autoFocus}
         inputMode="numeric"
         autoComplete="off"
         className="w-full bg-transparent py-3.5 font-mono text-lg text-ink placeholder:text-muted/50 focus:outline-none"
@@ -134,13 +137,11 @@ export function QuestionHeader({
   index,
   title,
   hint,
-  maxPoints,
   htmlFor,
 }: {
   index: number;
   title: string;
   hint?: string;
-  maxPoints?: number;
   htmlFor?: string;
 }) {
   return (
@@ -154,11 +155,6 @@ export function QuestionHeader({
         </label>
         {hint && <p className="mt-0.5 text-[13px] text-muted">{hint}</p>}
       </div>
-      {maxPoints !== undefined && (
-        <span className="neu-pressed-sm shrink-0 rounded-full px-2.5 py-1 font-mono text-[11px] text-muted">
-          max {maxPoints}p
-        </span>
-      )}
     </div>
   );
 }

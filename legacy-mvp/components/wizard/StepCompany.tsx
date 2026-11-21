@@ -13,9 +13,9 @@ export interface CompanyForm {
 
 export const SCENARIOS: { value: PortalSimulationScenario; label: string; hint: string }[] = [
   { value: "clean", label: "Fără litigii", hint: "0 dosare · 100p" },
-  { value: "minor", label: "1-2 dosare civile", hint: "fără risc critic · 80p" },
-  { value: "many", label: "3+ dosare civile", hint: "fără risc critic · 50p" },
-  { value: "critical", label: "Dosar critic", hint: "insolvență · 0p + kill-switch" },
+  { value: "minor", label: "Amenzi + litigiu în curs", hint: "niveluri 0-1 · 94p" },
+  { value: "many", label: "Dosare mixte", hint: "datorie, executare, penal ușor, achitare · 66p" },
+  { value: "critical", label: "Dosar critic", hint: "insolvență + evaziune · 0p + kill-switch" },
 ];
 
 export function StepCompany({

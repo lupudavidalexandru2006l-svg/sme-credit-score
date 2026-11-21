@@ -334,25 +334,24 @@ export function ResultsDashboard({
           />
           <FeedbackList items={frozenQuiz.items} />
         </Panel>
-        <div className="space-y-6">
-          <Panel>
-            <PanelTitle
-              icon={<Receipt size={18} />}
-              title="Quiz 2 · Scopul investiției"
-              aside={<span className="font-mono text-xs text-muted">{investment.total}/100</span>}
-            />
-            <FeedbackList items={investment.items} />
-          </Panel>
-          <Panel>
-            <PanelTitle
-              icon={<Gavel size={18} />}
-              title="Verificare portal.just.ro"
-              aside={legal && <span className="font-mono text-xs text-muted">{legal.legalScore}/100</span>}
-            />
-            <LegalCasesList legal={legal} loading={legalLoading} onRetry={onRetryLegal} />
-          </Panel>
-        </div>
+        <Panel>
+          <PanelTitle
+            icon={<Receipt size={18} />}
+            title="Quiz 2 · Scopul investiției"
+            aside={<span className="font-mono text-xs text-muted">{investment.total}/100</span>}
+          />
+          <FeedbackList items={investment.items} />
+        </Panel>
       </div>
+
+      <Panel>
+        <PanelTitle
+          icon={<Gavel size={18} />}
+          title="Verificare portal.just.ro · analiză pe dosare"
+          aside={legal && <span className="font-mono text-xs text-muted">{legal.legalScore}/100</span>}
+        />
+        <LegalCasesList legal={legal} loading={legalLoading} onRetry={onRetryLegal} />
+      </Panel>
 
       {debugPanel}
 

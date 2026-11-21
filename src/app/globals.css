@@ -1,141 +1,80 @@
 @import "tailwindcss";
 
+/* Corporate fintech palette: very light blue canvas, white cards, navy + emerald accents. */
 :root {
-  /* Fundal exterior & gradient */
-  --bg-sky-light: #8cb2e8;
-  --bg-cobalt-mid: #4b75c4;
-  --bg-royal-deep: #24428a;
-  --bg-egyptian: #03203d;
+  --canvas: #f4f7fb;
+  --card: #ffffff;
+  --line: #e3e9f2;
+  --line-strong: #cfd9e6;
+  --ink: #0f1b2d;
+  --muted: #5b6b82;
+  --faint: #8a99ad;
 
-  /* Suprafețe & carduri */
-  --surface-navy-dark: #0b1221;
-  --surface-card: #151f33;
-  --surface-track: #26344f;
-  --card-metallic-base: #4a66b8;
-  --card-metallic-mid: #6f87d6;
-  --card-metallic-shine: #b7ccfa;
+  --navy: #0b1f3a;
+  --navy-2: #132c50;
+  --navy-3: #1d3a66;
+  --navy-soft: #e8eef8;
 
-  /* Text & navigație */
-  --text-primary: #f8fafc;
-  --text-muted: #8b9bb8;
-  --accent-blue: #60a5fa;
-  --accent-indigo: #7c8cff;
-  --accent-stone: #639cc5;
+  --emerald: #0e9f6e;
+  --emerald-strong: #047857;
+  --emerald-soft: #e3f6ee;
 
-  /* Status & marcaje */
-  --status-positive: #34d399;
-  --status-negative: #eb2f33; /* Scarlet Red */
-  --badge-amber: #f59e0b;
-  --badge-teal: #14b8a6;
-
-  /* Neumorphic light sources (on --surface-card) */
-  --neu-shadow: rgba(3, 8, 18, 0.78);
-  --neu-highlight: rgba(88, 120, 178, 0.2);
-  --neu-pressed-bg: #111a2b;
+  --amber: #c97a06;
+  --amber-soft: #fdf3e1;
+  --red: #d42f2f;
+  --red-soft: #fdeaea;
+  --blue: #2f6fdf;
+  --blue-soft: #e8f0fd;
 }
 
 @theme inline {
-  --color-sky: var(--bg-sky-light);
-  --color-cobalt: var(--bg-cobalt-mid);
-  --color-royal: var(--bg-royal-deep);
-  --color-egyptian: var(--bg-egyptian);
-  --color-navy: var(--surface-navy-dark);
-  --color-card: var(--surface-card);
-  --color-track: var(--surface-track);
-  --color-metal: var(--card-metallic-base);
-  --color-metal-mid: var(--card-metallic-mid);
-  --color-metal-shine: var(--card-metallic-shine);
-  --color-ink: var(--text-primary);
-  --color-muted: var(--text-muted);
-  --color-accent: var(--accent-blue);
-  --color-indigo: var(--accent-indigo);
-  --color-stone: var(--accent-stone);
-  --color-positive: var(--status-positive);
-  --color-scarlet: var(--status-negative);
-  --color-amber: var(--badge-amber);
-  --color-teal: var(--badge-teal);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-3: var(--navy-3);
+  --color-navy-soft: var(--navy-soft);
+  --color-emerald: var(--emerald);
+  --color-emerald-strong: var(--emerald-strong);
+  --color-emerald-soft: var(--emerald-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-blue: var(--blue);
+  --color-blue-soft: var(--blue-soft);
   --font-sans: var(--font-manrope);
   --font-mono: var(--font-jetbrains);
+  --shadow-card: 0 1px 2px rgba(15, 27, 45, 0.04), 0 4px 16px -6px rgba(15, 27, 45, 0.08);
+  --shadow-pop: 0 12px 32px -8px rgba(11, 31, 58, 0.25);
 }
-
-/* ---- Neumorphic surfaces ------------------------------------------------ */
-
-@utility neu-raised {
-  background: linear-gradient(145deg, #18233a, #131c2e);
-  box-shadow:
-    9px 9px 20px var(--neu-shadow),
-    -7px -7px 16px var(--neu-highlight);
-}
-
-@utility neu-raised-sm {
-  background: linear-gradient(145deg, #19253c, #131c2e);
-  box-shadow:
-    5px 5px 11px var(--neu-shadow),
-    -4px -4px 9px var(--neu-highlight);
-}
-
-@utility neu-pressed {
-  background: var(--neu-pressed-bg);
-  box-shadow:
-    inset 6px 6px 12px var(--neu-shadow),
-    inset -5px -5px 10px var(--neu-highlight);
-}
-
-@utility neu-pressed-sm {
-  background: var(--neu-pressed-bg);
-  box-shadow:
-    inset 3px 3px 7px var(--neu-shadow),
-    inset -3px -3px 6px var(--neu-highlight);
-}
-
-@utility metallic {
-  background: linear-gradient(
-    125deg,
-    var(--card-metallic-base) 0%,
-    var(--card-metallic-mid) 38%,
-    var(--card-metallic-shine) 52%,
-    var(--card-metallic-mid) 66%,
-    var(--card-metallic-base) 100%
-  );
-}
-
-@utility btn-primary {
-  background: linear-gradient(145deg, #7fb4dc, var(--accent-stone) 55%, #4f86b0);
-  color: var(--bg-egyptian);
-  box-shadow:
-    6px 6px 14px var(--neu-shadow),
-    -4px -4px 10px var(--neu-highlight),
-    inset 1px 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-/* ---- Base ---------------------------------------------------------------- */
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
   min-height: 100vh;
-  color: var(--text-primary);
-  background-color: var(--bg-egyptian);
-  background-image:
-    radial-gradient(1100px 520px at 12% -8%, rgba(140, 178, 232, 0.55), transparent 62%),
-    radial-gradient(900px 600px at 100% 0%, rgba(99, 156, 197, 0.35), transparent 60%),
-    linear-gradient(165deg, var(--bg-cobalt-mid) 0%, var(--bg-royal-deep) 38%, var(--bg-egyptian) 100%);
-  background-attachment: fixed;
+  background: var(--canvas);
+  color: var(--ink);
   font-family: var(--font-manrope), system-ui, sans-serif;
+  font-feature-settings: "tnum" 1;
 }
 
 ::selection {
-  background: var(--accent-stone);
-  color: var(--bg-egyptian);
+  background: var(--emerald-soft);
+  color: var(--emerald-strong);
 }
 
-/* In a layer so Tailwind utilities (e.g. focus:outline-none) can override it. */
 @layer base {
   :focus-visible {
-    outline: 2px solid var(--accent-stone);
-    outline-offset: 3px;
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
   }
 }
 
@@ -145,42 +84,14 @@ input[type="number"]::-webkit-outer-spin-button {
   margin: 0;
 }
 
-/* Neumorphic range slider */
-input[type="range"].neu-range {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--neu-pressed-bg);
-  box-shadow:
-    inset 3px 3px 6px var(--neu-shadow),
-    inset -2px -2px 5px var(--neu-highlight);
-}
-input[type="range"].neu-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #8cc0e6, var(--accent-stone));
-  box-shadow:
-    4px 4px 9px var(--neu-shadow),
-    -3px -3px 7px var(--neu-highlight);
-  cursor: pointer;
-}
-input[type="range"].neu-range::-moz-range-thumb {
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #8cc0e6, var(--accent-stone));
-  box-shadow: 4px 4px 9px var(--neu-shadow);
-  cursor: pointer;
+input[type="range"] {
+  accent-color: var(--emerald);
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -188,11 +99,33 @@ input[type="range"].neu-range::-moz-range-thumb {
   }
 }
 .animate-rise {
-  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 159, 110, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgba(14, 159, 110, 0);
+  }
+}
+.animate-flash {
+  animation: flash 0.9s ease-out;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-rise {
+  .animate-rise,
+  .animate-flash {
     animation: none;
   }
   * {

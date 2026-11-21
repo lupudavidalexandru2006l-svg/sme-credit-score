@@ -38,7 +38,7 @@ export function StepInvestment({
 
       <div className="mt-8 space-y-10">
         <div>
-          <QuestionHeader index={1} title="Destinația principală a finanțării" maxPoints={50} />
+          <QuestionHeader index={1} title="Destinația principală a finanțării" />
           <div role="radiogroup" aria-label="Destinația finanțării" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {INVESTMENT_PURPOSES.map((p) => {
               const Icon = ICONS[p.value];
@@ -74,7 +74,7 @@ export function StepInvestment({
               htmlFor="own"
               title="Aportul propriu / avans"
               hint="Procent din valoarea proiectului acoperit din surse proprii"
-              maxPoints={30}
+             
             />
             <div className="neu-pressed rounded-2xl p-5">
               <div className="flex items-baseline justify-between">
@@ -108,7 +108,7 @@ export function StepInvestment({
               htmlFor="amount"
               title="Suma solicitată"
               hint="Comparată cu cifra de afaceri anualizată din e-Factura"
-              maxPoints={20}
+             
             />
             <MoneyInput
               id="amount"

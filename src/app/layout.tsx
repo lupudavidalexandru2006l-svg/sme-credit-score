@@ -2,20 +2,13 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
-  subsets: ["latin", "latin-ext"],
-});
-
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
-  subsets: ["latin", "latin-ext"],
-});
+const manrope = Manrope({ variable: "--font-manrope", subsets: ["latin", "latin-ext"] });
+const jetbrains = JetBrains_Mono({ variable: "--font-jetbrains", subsets: ["latin", "latin-ext"] });
 
 export const metadata: Metadata = {
-  title: "SME Credit Readiness Score",
+  title: "Credit Ready — evaluare IMM",
   description:
-    "Evaluare a pregătirii IMM-urilor pentru credit: date e-Factura, factor uman (quiz + portal.just.ro) și scopul investiției.",
+    "Profil Credit Readiness pentru IMM-uri din România: date e-Factura pe 12 luni, factor uman (quiz + portal.just.ro), scopul investiției și plan de acțiune 30–90 de zile.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
