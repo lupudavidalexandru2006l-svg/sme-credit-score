@@ -1,0 +1,201 @@
+@import "tailwindcss";
+
+:root {
+  /* Fundal exterior & gradient */
+  --bg-sky-light: #8cb2e8;
+  --bg-cobalt-mid: #4b75c4;
+  --bg-royal-deep: #24428a;
+  --bg-egyptian: #03203d;
+
+  /* Suprafețe & carduri */
+  --surface-navy-dark: #0b1221;
+  --surface-card: #151f33;
+  --surface-track: #26344f;
+  --card-metallic-base: #4a66b8;
+  --card-metallic-mid: #6f87d6;
+  --card-metallic-shine: #b7ccfa;
+
+  /* Text & navigație */
+  --text-primary: #f8fafc;
+  --text-muted: #8b9bb8;
+  --accent-blue: #60a5fa;
+  --accent-indigo: #7c8cff;
+  --accent-stone: #639cc5;
+
+  /* Status & marcaje */
+  --status-positive: #34d399;
+  --status-negative: #eb2f33; /* Scarlet Red */
+  --badge-amber: #f59e0b;
+  --badge-teal: #14b8a6;
+
+  /* Neumorphic light sources (on --surface-card) */
+  --neu-shadow: rgba(3, 8, 18, 0.78);
+  --neu-highlight: rgba(88, 120, 178, 0.2);
+  --neu-pressed-bg: #111a2b;
+}
+
+@theme inline {
+  --color-sky: var(--bg-sky-light);
+  --color-cobalt: var(--bg-cobalt-mid);
+  --color-royal: var(--bg-royal-deep);
+  --color-egyptian: var(--bg-egyptian);
+  --color-navy: var(--surface-navy-dark);
+  --color-card: var(--surface-card);
+  --color-track: var(--surface-track);
+  --color-metal: var(--card-metallic-base);
+  --color-metal-mid: var(--card-metallic-mid);
+  --color-metal-shine: var(--card-metallic-shine);
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent-blue);
+  --color-indigo: var(--accent-indigo);
+  --color-stone: var(--accent-stone);
+  --color-positive: var(--status-positive);
+  --color-scarlet: var(--status-negative);
+  --color-amber: var(--badge-amber);
+  --color-teal: var(--badge-teal);
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-jetbrains);
+}
+
+/* ---- Neumorphic surfaces ------------------------------------------------ */
+
+@utility neu-raised {
+  background: linear-gradient(145deg, #18233a, #131c2e);
+  box-shadow:
+    9px 9px 20px var(--neu-shadow),
+    -7px -7px 16px var(--neu-highlight);
+}
+
+@utility neu-raised-sm {
+  background: linear-gradient(145deg, #19253c, #131c2e);
+  box-shadow:
+    5px 5px 11px var(--neu-shadow),
+    -4px -4px 9px var(--neu-highlight);
+}
+
+@utility neu-pressed {
+  background: var(--neu-pressed-bg);
+  box-shadow:
+    inset 6px 6px 12px var(--neu-shadow),
+    inset -5px -5px 10px var(--neu-highlight);
+}
+
+@utility neu-pressed-sm {
+  background: var(--neu-pressed-bg);
+  box-shadow:
+    inset 3px 3px 7px var(--neu-shadow),
+    inset -3px -3px 6px var(--neu-highlight);
+}
+
+@utility metallic {
+  background: linear-gradient(
+    125deg,
+    var(--card-metallic-base) 0%,
+    var(--card-metallic-mid) 38%,
+    var(--card-metallic-shine) 52%,
+    var(--card-metallic-mid) 66%,
+    var(--card-metallic-base) 100%
+  );
+}
+
+@utility btn-primary {
+  background: linear-gradient(145deg, #7fb4dc, var(--accent-stone) 55%, #4f86b0);
+  color: var(--bg-egyptian);
+  box-shadow:
+    6px 6px 14px var(--neu-shadow),
+    -4px -4px 10px var(--neu-highlight),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---- Base ---------------------------------------------------------------- */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--text-primary);
+  background-color: var(--bg-egyptian);
+  background-image:
+    radial-gradient(1100px 520px at 12% -8%, rgba(140, 178, 232, 0.55), transparent 62%),
+    radial-gradient(900px 600px at 100% 0%, rgba(99, 156, 197, 0.35), transparent 60%),
+    linear-gradient(165deg, var(--bg-cobalt-mid) 0%, var(--bg-royal-deep) 38%, var(--bg-egyptian) 100%);
+  background-attachment: fixed;
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--accent-stone);
+  color: var(--bg-egyptian);
+}
+
+/* In a layer so Tailwind utilities (e.g. focus:outline-none) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent-stone);
+    outline-offset: 3px;
+  }
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Neumorphic range slider */
+input[type="range"].neu-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--neu-pressed-bg);
+  box-shadow:
+    inset 3px 3px 6px var(--neu-shadow),
+    inset -2px -2px 5px var(--neu-highlight);
+}
+input[type="range"].neu-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #8cc0e6, var(--accent-stone));
+  box-shadow:
+    4px 4px 9px var(--neu-shadow),
+    -3px -3px 7px var(--neu-highlight);
+  cursor: pointer;
+}
+input[type="range"].neu-range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #8cc0e6, var(--accent-stone));
+  box-shadow: 4px 4px 9px var(--neu-shadow);
+  cursor: pointer;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.animate-rise {
+  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise {
+    animation: none;
+  }
+  * {
+    transition-duration: 0s !important;
+  }
+}
