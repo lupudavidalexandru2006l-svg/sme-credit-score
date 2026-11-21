@@ -1,13 +1,8 @@
 "use server";
 
 import { XMLParser } from "fast-xml-parser";
-import type {
-  CourtCase,
-  CourtHearing,
-  LegalCheckResult,
-  PortalSimulationScenario,
-} from "@/types/scoring";
-import { analyzeCase, FALLBACK_LEGAL_SCORE, partyNameExact, scoreLegalCases } from "@/lib/scoringEngine";
+import type { CourtCase, CourtHearing, LegalCheckResult } from "@/types/scoring";
+import { analyzeCase, assessIdentity, partyNameExact, rescoreLegal } from "@/lib/scoringEngine";
 
 const ENDPOINT = "http://portalquery.just.ro/Query.asmx";
 const SOAP_ACTION = "portalquery.just.ro/CautareDosare";
@@ -20,8 +15,8 @@ const PORTAL_RESULT_LIMIT = 1000;
 export interface CheckPortalJustInput {
   companyName: string;
   ceoName: string;
-  simulationMode?: boolean;
-  simulationScenario?: PortalSimulationScenario;
+  /** County of the firm's registered office, to compare with the court of each case. */
+  companyCounty?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,14 +70,22 @@ export interface ParsedPortalResponse {
   truncated: boolean;
 }
 
+/** What we know about the firm, to judge whether an administrator case is really theirs. */
+export interface IdentityContext {
+  companyName: string;
+  companyCounty: string;
+}
+
 /**
  * Parses a CautareDosare SOAP response into CourtCase objects.
- * Keeps ONLY cases where a party has exactly the searched full name.
+ * Keeps ONLY cases where a party has exactly the searched full name,
+ * and rates how sure it is that the case belongs to the searched party.
  */
 export async function parseCautareDosareXml(
   xml: string,
   matchedBy: CourtCase["matchedBy"],
   searchedName = "",
+  identity: IdentityContext = { companyName: "", companyCounty: "" },
 ): Promise<ParsedPortalResponse> {
   const doc = parser.parse(xml);
   const body = doc?.Envelope?.Body;
@@ -113,11 +116,15 @@ export async function parseCautareDosareXml(
       documentSedinta: str(h.documentSedinta),
     }));
     const analysis = analyzeCase({ obiect, categorie, stadiu, partyRoles, hearings, searchedName });
+    const institutie = str(d.institutie).replace(/([a-z])([A-Z])/g, "$1 $2");
+    const id = assessIdentity({ matchedBy, partyNames: parti.map((p) => str(p.nume)), institutie, ...identity });
     // Searched party first so it is visible in the UI.
     const sortedParti = [...mine, ...parti.filter((p) => !isMe(p))];
     cases.push({
       numar: str(d.numar),
-      institutie: str(d.institutie).replace(/([a-z])([A-Z])/g, "$1 $2"),
+      institutie,
+      confidence: id.confidence,
+      confidenceReasons: id.reasons,
       data: str(d.data).slice(0, 10),
       obiect,
       categorie,
@@ -133,7 +140,7 @@ export async function parseCautareDosareXml(
   return { cases, excluded, truncated: dosare.length >= PORTAL_RESULT_LIMIT };
 }
 
-async function queryPortal(numeParte: string, matchedBy: CourtCase["matchedBy"]) {
+async function queryPortal(numeParte: string, matchedBy: CourtCase["matchedBy"], identity: IdentityContext) {
   const res = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
@@ -148,193 +155,7 @@ async function queryPortal(numeParte: string, matchedBy: CourtCase["matchedBy"])
   if (!res.ok && !text.includes("Envelope")) {
     throw new Error(`portal.just.ro HTTP ${res.status}`);
   }
-  return parseCautareDosareXml(text, matchedBy, numeParte);
-}
-
-// ---------------------------------------------------------------------------
-// Simulation data (demo mode)
-// ---------------------------------------------------------------------------
-
-interface SimCase {
-  numar: string;
-  obiect: string;
-  categorie: string;
-  stadiu: string;
-  matchedBy: CourtCase["matchedBy"];
-  role: string;
-  institutie: string;
-  /** [date, solutie, solutieSumar]; "{nume}" is replaced with the searched name. */
-  hearings: [string, string, string][];
-}
-
-const SIM_CASES: Record<PortalSimulationScenario, SimCase[]> = {
-  clean: [],
-  minor: [
-    {
-      numar: "5194/211/2025",
-      obiect: "plângere contravenţională P.V. seria PBW nr. 794840",
-      categorie: "Civil",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Petent",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [
-        ["2025-11-04", "Respinge plângerea", "Respinge ca neîntemeiată plângerea formulată de petentul {nume} împotriva procesului-verbal. Cu drept de apel în 30 de zile."],
-      ],
-    },
-    {
-      numar: "6724/211/2025",
-      obiect: "anulare proces verbal de contravenţie",
-      categorie: "Civil",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Petent",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [["2025-09-16", "Admite plângerea", "Admite plângerea formulată de petentul {nume}. Anulează procesul-verbal de contravenţie. Definitivă."]],
-    },
-    {
-      numar: "4127/211/2026",
-      obiect: "pretenţii",
-      categorie: "Civil",
-      stadiu: "Fond",
-      matchedBy: "firma",
-      role: "Pârât",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [
-        ["2027-01-20", "", ""],
-        ["2026-10-14", "Amână cauza", "Pentru lipsă de procedură."],
-      ],
-    },
-  ],
-  many: [
-    {
-      numar: "1893/1285/2025",
-      obiect: "pretenţii",
-      categorie: "Litigii cu profesioniştii",
-      stadiu: "Fond",
-      matchedBy: "firma",
-      role: "Pârât",
-      institutie: "Tribunalul Cluj",
-      hearings: [
-        ["2026-04-08", "Admite cererea", "Admite cererea formulată de reclamanta SC Exemplu Partener SRL. Obligă pârâta {nume} la plata sumei de 48.200 lei. Cu drept de apel."],
-      ],
-    },
-    {
-      numar: "772/211/2026",
-      obiect: "contestaţie la executare",
-      categorie: "Civil",
-      stadiu: "Fond",
-      matchedBy: "firma",
-      role: "Contestator",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [["2026-06-02", "Respinge cererea", "Respinge contestaţia la executare formulată de contestatoarea {nume}, ca neîntemeiată. Definitivă."]],
-    },
-    {
-      numar: "645/211/2024",
-      obiect: "conducere fără permis (art.335 NCP)",
-      categorie: "Penal",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Inculpat",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [
-        ["2024-09-07", "Soluţionare", "În baza art. 83 Cod penal amână aplicarea pedepsei de 6 luni închisoare stabilite în sarcina inculpatului {nume} pe un termen de supraveghere de 2 ani. Definitivă."],
-      ],
-    },
-    {
-      numar: "3263/211/2023",
-      obiect: "lovirea sau alte violenţe (art.193 NCP)",
-      categorie: "Penal",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Inculpat",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [
-        ["2023-10-25", "Încetat procesul penal", "În temeiul art. 396 alin. 6 C.proc.pen. încetează procesul penal faţă de inculpatul {nume} ca urmare a împăcării părţilor. Definitivă."],
-      ],
-    },
-    {
-      numar: "2210/211/2025",
-      obiect: "înşelăciunea (art.244 NCP)",
-      categorie: "Penal",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Inculpat",
-      institutie: "Judecătoria Cluj-Napoca",
-      hearings: [["2025-05-12", "Soluţionare", "În baza art. 396 alin. 5 C.proc.pen. achită pe inculpatul {nume}, întrucât fapta nu există. Definitivă."]],
-    },
-  ],
-  critical: [
-    {
-      numar: "2231/1285/2026",
-      obiect: "procedura insolvenţei - societăţi cu răspundere limitată",
-      categorie: "Faliment",
-      stadiu: "Fond",
-      matchedBy: "firma",
-      role: "Debitor",
-      institutie: "Tribunalul Cluj",
-      hearings: [["2026-07-01", "Admite cererea", "Admite cererea creditoarei. Deschide procedura generală de insolvenţă împotriva debitoarei {nume}."]],
-    },
-    {
-      // Creditor in another company's insolvency: listed, but no impact.
-      numar: "918/1285/2026",
-      obiect: "procedura insolvenţei - SC Client Restanţier SRL",
-      categorie: "Faliment",
-      stadiu: "Fond",
-      matchedBy: "firma",
-      role: "Creditor",
-      institutie: "Tribunalul Cluj",
-      hearings: [["2027-02-10", "", ""]],
-    },
-    {
-      numar: "29063/211/2025",
-      obiect: "evaziune fiscală (Legea 241/2005 art. 9)",
-      categorie: "Penal",
-      stadiu: "Fond",
-      matchedBy: "administrator",
-      role: "Inculpat",
-      institutie: "Tribunalul Cluj",
-      hearings: [
-        ["2027-01-15", "", ""],
-        ["2026-11-02", "Amână cauza", "Pentru audierea martorilor."],
-      ],
-    },
-  ],
-};
-
-function simulatedCases(scenario: PortalSimulationScenario, companyName: string, ceoName: string): CourtCase[] {
-  return SIM_CASES[scenario]
-    .filter((c) => (c.matchedBy === "firma" ? companyName : ceoName))
-    .map((c) => {
-      const nume = c.matchedBy === "firma" ? companyName : ceoName;
-      const hearings: CourtHearing[] = c.hearings.map(([data, solutie, sumar]) => ({
-        data: `${data}T00:00:00`,
-        solutie,
-        solutieSumar: sumar.replaceAll("{nume}", nume),
-        documentSedinta: solutie && !/amân/i.test(solutie) ? "Hotarare" : "incheieredesedinta",
-      }));
-      const analysis = analyzeCase({
-        obiect: c.obiect,
-        categorie: c.categorie,
-        stadiu: c.stadiu,
-        partyRoles: [c.role],
-        hearings,
-        searchedName: nume,
-      });
-      return {
-        numar: c.numar,
-        institutie: c.institutie,
-        data: hearings[hearings.length - 1]?.data.slice(0, 10) ?? "",
-        obiect: c.obiect,
-        categorie: c.categorie,
-        stadiu: c.stadiu,
-        parti: [`${nume} (${c.role})`, "SC Exemplu Partener SRL"],
-        matchedBy: c.matchedBy,
-        partyRoles: [c.role],
-        ...analysis,
-      };
-    })
-    .sort((x, y) => y.severity - x.severity || y.deduction - x.deduction);
+  return parseCautareDosareXml(text, matchedBy, numeParte, identity);
 }
 
 // ---------------------------------------------------------------------------
@@ -349,46 +170,38 @@ function buildResult(
   excludedCount = 0,
 ): LegalCheckResult {
   const isFallback = source === "fallback";
-  const scored = scoreLegalCases(cases);
-  return {
-    query: { companyName: input.companyName, ceoName: input.ceoName },
+  return rescoreLegal({
+    query: { companyName: input.companyName, ceoName: input.ceoName, companyCounty: input.companyCounty?.trim() ?? "" },
     source,
     isFallback,
-    isSimulated: source === "simulation",
     cases,
     totalFound: cases.length,
     excludedCount,
-    criticalCount: scored.criticalCount,
-    totalDeduction: isFallback ? 0 : scored.totalDeduction,
-    minorCapApplied: !isFallback && scored.minorCapApplied,
-    legalScore: isFallback ? FALLBACK_LEGAL_SCORE : scored.legalScore,
-    integrityKillSwitch: isFallback ? false : scored.integrityKillSwitch,
+    criticalCount: 0,
+    totalDeduction: 0,
+    minorCapApplied: false,
+    // Unavailable portal: no score at all (the assessment leaves the source out instead of inventing one).
+    legalScore: 0,
+    integrityKillSwitch: false,
     message,
     checkedAt: new Date().toISOString(),
-  };
+  });
 }
+
+const IDENTITY_NOTE =
+  "Portalul nu publică CNP-ul: fiecare dosar al administratorului are un nivel de încredere (firma în același dosar, județul instanței). Dosarele incerte contează redus până le confirmi sau le contești.";
 
 export async function checkPortalJust(input: CheckPortalJustInput): Promise<LegalCheckResult> {
   const companyName = input.companyName.trim();
   const ceoName = input.ceoName.trim();
+  const companyCounty = input.companyCounty?.trim() ?? "";
   const clean = { ...input, companyName, ceoName };
-
-  if (input.simulationMode) {
-    const scenario = input.simulationScenario ?? "clean";
-    // Small delay so the demo shows the loading state.
-    await new Promise((r) => setTimeout(r, 900));
-    return buildResult(
-      clean,
-      simulatedCases(scenario, companyName, ceoName),
-      "simulation",
-      `Mod Simulare Portal Just — scenariu „${scenario}”. Datele nu provin de la portal.just.ro.`,
-    );
-  }
+  const identity: IdentityContext = { companyName, companyCounty };
 
   try {
     const queries: Promise<ParsedPortalResponse>[] = [];
-    if (companyName) queries.push(queryPortal(companyName, "firma"));
-    if (ceoName) queries.push(queryPortal(ceoName, "administrator"));
+    if (companyName) queries.push(queryPortal(companyName, "firma", identity));
+    if (ceoName) queries.push(queryPortal(ceoName, "administrator", identity));
     const responses = await Promise.all(queries);
     const results = responses.flatMap((r) => r.cases);
     const excluded = responses.reduce((sum, r) => sum + r.excluded, 0);
@@ -410,9 +223,7 @@ export async function checkPortalJust(input: CheckPortalJustInput): Promise<Lega
     if (truncated) {
       parts.push("Numele este foarte comun: portalul s-a oprit la 1000 de rezultate, deci pot exista dosare nevăzute.");
     }
-    if (cases.length > 0 && ceoName) {
-      parts.push("Portalul nu publică CNP-ul: un dosar pe același nume complet poate aparține unei alte persoane (omonim).");
-    }
+    if (cases.some((c) => c.matchedBy === "administrator")) parts.push(IDENTITY_NOTE);
     return buildResult(clean, cases, "portal.just.ro", parts.join(" "), excluded);
   } catch (err) {
     const reason =
@@ -425,7 +236,7 @@ export async function checkPortalJust(input: CheckPortalJustInput): Promise<Lega
       clean,
       [],
       "fallback",
-      `portal.just.ro indisponibil (${reason}). S-a aplicat un punctaj neutru de ${FALLBACK_LEGAL_SCORE}/100 până la re-verificare.`,
+      `portal.just.ro indisponibil (${reason}). Sursa nu intră în scor până la o verificare reușită — apasă „Reverifică”.`,
     );
   }
 }

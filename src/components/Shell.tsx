@@ -3,27 +3,27 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { ArrowDownRight, ArrowUpRight, ChartColumn, Check, ClipboardCheck, Database, FileUp, LoaderCircle, RotateCcw, Target, UserRound, X } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Building2, ChartColumn, Check, ClipboardCheck, FileUp, LoaderCircle, RotateCcw, Tag, Target, UserRound, X } from "lucide-react";
 import { useAssessment, type StepId } from "./AssessmentProvider";
-import { ScoreRing } from "./charts";
+import { Figure, ScoreRing } from "./charts";
 import { Button, cx, ProgressBar } from "./ui";
+import { PlanBadge, UpgradePrompt } from "./PlanGate";
+import { companyLabel } from "@/lib/company";
 import { num } from "@/lib/util";
 
 export const STEPS: { id: StepId; href: string; label: string; short: string; icon: ReactNode }[] = [
-  { id: "onboarding", href: "/onboarding", label: "Firmă & factor uman", short: "Onboarding", icon: <UserRound size={17} /> },
-  { id: "analiza", href: "/analiza", label: "Analiză business & e-Factura", short: "Analiză", icon: <ChartColumn size={17} /> },
-  { id: "investitie", href: "/investitie", label: "Investiție & sector", short: "Investiție", icon: <Target size={17} /> },
-  { id: "profil", href: "/profil", label: "Profil Credit Ready & plan", short: "Profil", icon: <ClipboardCheck size={17} /> },
+  { id: "onboarding", href: "/onboarding", label: "Firmă & factor uman", short: "Onboarding", icon: <UserRound size={16} /> },
+  { id: "analiza", href: "/analiza", label: "Analiză e-Factura", short: "Analiză", icon: <ChartColumn size={16} /> },
+  { id: "investitie", href: "/investitie", label: "Investiție & sector", short: "Investiție", icon: <Target size={16} /> },
+  { id: "profil", href: "/profil", label: "Profil & plan", short: "Profil", icon: <ClipboardCheck size={16} /> },
 ];
 
 function BrandMark() {
   return (
-    <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 ring-1 ring-white/15">
-      <span className="flex h-5 items-end gap-[3px]">
-        <span className="h-2 w-[5px] rounded-sm bg-emerald/60" />
-        <span className="h-3.5 w-[5px] rounded-sm bg-emerald/80" />
-        <span className="h-5 w-[5px] rounded-sm bg-emerald" />
-      </span>
+    <span className="flex h-4 items-end gap-[3px]" aria-hidden>
+      <span className="h-1.5 w-[4px] rounded-full bg-navy/35" />
+      <span className="h-2.5 w-[4px] rounded-full bg-navy/65" />
+      <span className="h-4 w-[4px] rounded-full bg-navy" />
     </span>
   );
 }
@@ -46,7 +46,7 @@ function useStepDone() {
 
 function Sidebar() {
   const path = usePathname();
-  const { assessment, supabase, dataset, legal, legalLoading } = useAssessment();
+  const { assessment, supabase, dataset, legal, legalLoading, verification, verificationLoading } = useAssessment();
   const done = useStepDone();
   const f = assessment.final;
   const pillars = [
@@ -57,17 +57,14 @@ function Sidebar() {
   const provisional = !STEPS.slice(0, 3).every((s) => done(s.id));
 
   return (
-    <aside className="no-print sticky top-0 hidden h-screen w-[280px] shrink-0 flex-col overflow-y-auto bg-navy px-5 py-6 text-white lg:flex">
-      <div className="flex items-center gap-3">
+    <aside className="no-print sticky top-3 hidden h-[calc(100vh-1.5rem)] w-[256px] shrink-0 flex-col overflow-y-auto rounded-[28px] border border-white/80 bg-white/55 p-5 shadow-card backdrop-blur-xl lg:flex">
+      <div className="flex items-center gap-2.5 px-1">
         <BrandMark />
-        <div>
-          <p className="text-base font-extrabold tracking-tight">Credit Ready</p>
-          <p className="text-[11px] text-white/55">Challenge 2 · evaluare IMM</p>
-        </div>
+        <p className="text-[15px] font-medium tracking-tight text-ink">Credit Ready</p>
       </div>
 
-      <nav className="mt-8 space-y-1" aria-label="Pașii evaluării">
-        <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">Evaluare</p>
+      <nav className="mt-8 space-y-0.5" aria-label="Pașii evaluării">
+        <p className="mb-2 px-3 text-xs text-faint">Evaluare</p>
         {STEPS.map((s, i) => {
           const active = path.startsWith(s.href);
           const ok = done(s.id);
@@ -76,63 +73,97 @@ function Sidebar() {
               key={s.id}
               href={s.href}
               className={cx(
-                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
-                active ? "bg-white text-navy" : "text-white/75 hover:bg-white/8 hover:text-white",
+                "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+                active ? "bg-white text-ink shadow-[0_1px_3px_rgba(23,32,28,0.06)]" : "text-muted hover:bg-white/60 hover:text-ink",
               )}
             >
               <span
                 className={cx(
-                  "grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs font-bold",
-                  ok ? "bg-emerald text-white" : active ? "bg-navy-soft text-navy-3" : "bg-white/10 text-white/70",
+                  "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px]",
+                  ok ? "bg-emerald-soft text-emerald-strong" : active ? "bg-navy text-white" : "border border-line-strong text-faint",
                 )}
               >
-                {ok ? <Check size={15} strokeWidth={3} /> : i + 1}
+                {ok ? <Check size={13} strokeWidth={2.5} /> : i + 1}
               </span>
               <span className="leading-tight">{s.label}</span>
             </Link>
           );
         })}
+        <p className="mb-2 mt-6 px-3 text-xs text-faint">Abonament</p>
+        <Link
+          href="/pricing"
+          className={cx(
+            "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+            path.startsWith("/pricing") ? "bg-white text-ink shadow-[0_1px_3px_rgba(23,32,28,0.06)]" : "text-muted hover:bg-white/60 hover:text-ink",
+          )}
+        >
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line-strong text-faint">
+            <Tag size={12} />
+          </span>
+          <span className="leading-tight">Prețuri / Planuri</span>
+        </Link>
       </nav>
 
-      <div className="mt-8 rounded-2xl bg-navy-2 p-4 ring-1 ring-white/10">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Scor live</p>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald" /> recalculat instant
+      <div className="mt-8 border-t border-line pt-6">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-xs text-faint">Scor live</p>
+          <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-strong">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald" /> live
           </span>
         </div>
-        <div className="mt-3 flex justify-center">
-          <ScoreRing score={f.finalScore} size={132} stroke={11} dark label={provisional ? "provizoriu" : "din 100"} />
+        <div className="mt-4 flex justify-center">
+          {f.complete ? (
+            <ScoreRing score={f.finalScore} size={128} stroke={6} label={provisional ? "provizoriu" : "din 100"} />
+          ) : (
+            <div className="grid h-32 w-32 place-items-center rounded-full border-[6px] border-line text-center">
+              <div>
+                <p className="text-3xl font-light text-faint">—</p>
+                <p className="text-[11px] text-faint">incomplet</p>
+              </div>
+            </div>
+          )}
         </div>
-        <p className="mt-2 text-center text-sm font-bold">{f.status}</p>
-        {f.quizKillSwitch && <p className="mt-1 text-center text-[11px] font-bold text-red-soft">Kill-switch quiz activ: -10 p</p>}
-        <div className="mt-4 space-y-2.5">
+        {f.complete ? (
+          <p className="mt-3 text-center text-sm text-ink">{f.status}</p>
+        ) : (
+          <p className="mt-3 text-center text-[11px] leading-relaxed text-muted">Lipsesc: {(f.missing ?? []).join("; ")}.</p>
+        )}
+        {f.quizKillSwitch && <p className="mt-1 text-center text-[11px] text-red">Kill-switch quiz activ: −10 p</p>}
+        <div className="mt-5 space-y-3 px-1">
           {pillars.map((p) => (
             <div key={p.label}>
-              <div className="mb-1 flex justify-between text-[11px]">
-                <span className="text-white/70">
-                  {p.label} <span className="text-white/40">· {p.w}</span>
+              <div className="mb-1.5 flex justify-between text-[11px]">
+                <span className="text-muted">
+                  {p.label} <span className="text-faint">· {p.w}</span>
                 </span>
-                <span className="font-bold">{num(p.score)}</span>
+                <span className="text-ink">{f.complete ? num(p.score) : "—"}</span>
               </div>
-              <ProgressBar value={p.score} className="bg-white/10" />
+              <ProgressBar value={f.complete ? p.score : 0} className="h-1" />
             </div>
           ))}
         </div>
       </div>
 
-      <div className="mt-auto space-y-2 pt-6 text-[11px] text-white/60">
+      <div className="mt-auto space-y-1.5 px-1 pt-6 text-[11px] text-faint">
         <p className="flex items-center gap-2">
-          <Database size={13} />
-          {supabase === null ? "Se încarcă datele…" : dataset.source === "supabase" ? "Date: Supabase (live)" : "Date: sintetice locale"}
+          <span className={cx("h-1.5 w-1.5 rounded-full", dataset.source === "supabase" ? "bg-emerald" : "bg-faint")} />
+          {supabase === null ? "Se încarcă datele…" : dataset.source === "supabase" ? "Supabase live" : "Salvat local în browser"}
         </p>
-        {supabase?.error && <p className="text-amber-soft/80">{supabase.error}</p>}
+        {supabase?.error && <p className="text-amber">{supabase.error}</p>}
         <p className="flex items-center gap-2">
-          {legalLoading ? <LoaderCircle size={13} className="animate-spin" /> : <span className="h-2 w-2 rounded-full bg-white/40" />}
-          portal.just.ro:{" "}
-          {legalLoading ? "verificare…" : legal ? (legal.source === "portal.just.ro" ? "Live" : legal.source === "simulation" ? "Simulat" : "Fallback") : "neverificat"}
+          {legalLoading ? <LoaderCircle size={11} className="animate-spin" /> : <span className={cx("h-1.5 w-1.5 rounded-full", legal?.source === "portal.just.ro" ? "bg-emerald" : "bg-faint")} />}
+          portal.just.ro ·{" "}
+          {legalLoading ? "verificare…" : legal ? (legal.source === "portal.just.ro" ? "live" : "indisponibil") : "neverificat"}
         </p>
-        <p className="leading-relaxed text-white/40">Ghid de pregătire pe date sintetice — nu este o aprobare bancară.</p>
+        <p className="flex items-center gap-2">
+          {verificationLoading ? <LoaderCircle size={11} className="animate-spin" /> : <span className={cx("h-1.5 w-1.5 rounded-full", verification.aggregateScore !== null ? "bg-emerald" : "bg-faint")} />}
+          surse oficiale · {verificationLoading ? "interogare…" : `${verification.sources.filter((x) => x.score !== null).length}/${verification.sources.length} au răspuns`}
+        </p>
+        <p className="pt-2 leading-relaxed">Ghid de pregătire pe date reale (ANAF, bilanț, VIES, portal.just.ro, e-Factura), nu aprobare bancară.</p>
+        <p className="flex gap-3">
+          <Link href="/termeni" className="hover:text-ink">Termeni</Link>
+          <Link href="/confidentialitate" className="hover:text-ink">Confidențialitate</Link>
+        </p>
       </div>
     </aside>
   );
@@ -142,14 +173,20 @@ function MobileNav() {
   const path = usePathname();
   const { assessment } = useAssessment();
   return (
-    <div className="no-print sticky top-0 z-20 border-b border-line bg-navy px-4 py-3 text-white lg:hidden">
+    <div className="no-print sticky top-0 z-20 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <BrandMark />
-          <p className="font-extrabold">Credit Ready</p>
+          <p className="font-medium tracking-tight">Credit Ready</p>
         </div>
-        <p className="text-sm">
-          Scor <span className="text-lg font-extrabold">{num(assessment.final.finalScore)}</span>
+        <Link href="/pricing" className={cx("ml-auto mr-3 rounded-full px-3 py-1 text-[11px]", path.startsWith("/pricing") ? "bg-navy text-white" : "border border-line text-muted")}>
+          Prețuri
+        </Link>
+        <p className="text-sm text-muted">
+          Scor{" "}
+          <span className="text-lg font-light text-ink">
+            {assessment.final.complete ? <Figure value={num(assessment.final.finalScore)} /> : "—"}
+          </span>
         </p>
       </div>
       <nav className="mt-3 grid grid-cols-4 gap-1" aria-label="Pașii evaluării">
@@ -157,7 +194,7 @@ function MobileNav() {
           <Link
             key={s.id}
             href={s.href}
-            className={cx("rounded-lg px-1 py-1.5 text-center text-[11px] font-bold", path.startsWith(s.href) ? "bg-white text-navy" : "bg-white/10 text-white/80")}
+            className={cx("rounded-full px-1 py-1.5 text-center text-[11px]", path.startsWith(s.href) ? "bg-navy text-white" : "text-muted")}
           >
             {i + 1}. {s.short}
           </Link>
@@ -168,7 +205,7 @@ function MobileNav() {
 }
 
 /** Visible "upload e-Factura XML" button, available on every step. */
-export function XmlUploadButton({ variant = "emerald", label = "Încarcă XML e-Factura (UBL 2.1)" }: { variant?: "emerald" | "primary" | "secondary"; label?: string }) {
+export function XmlUploadButton({ variant = "emerald", label = "Încarcă XML e-Factura" }: { variant?: "emerald" | "primary" | "secondary"; label?: string }) {
   const { uploadXml } = useAssessment();
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -192,28 +229,59 @@ export function XmlUploadButton({ variant = "emerald", label = "Încarcă XML e-
           }
         }}
       />
-      <Button variant={variant} onClick={() => ref.current?.click()} disabled={busy}>
-        {busy ? <LoaderCircle size={16} className="animate-spin" /> : <FileUp size={16} />}
+      <Button variant={variant} onClick={() => ref.current?.click()} disabled={busy} title="Facturi UBL 2.1 (RO e-Factura)">
+        {busy ? <LoaderCircle size={15} className="animate-spin" /> : <FileUp size={15} />}
         {label}
       </Button>
     </>
   );
 }
 
-function TopBar() {
-  const { company, assessment, uploads, resetUploads } = useAssessment();
+/** "Firmă activă / Istoric firme": every saved company stays available; switching never deletes data. */
+function CompanySwitcher() {
+  const { company, companies, switchCompany, assessment, dataset } = useAssessment();
+  const sorted = [...companies].sort((a, b) => a.name.localeCompare(b.name, "ro"));
   return (
-    <div className="no-print flex flex-wrap items-center justify-between gap-3 border-b border-line bg-card/80 px-4 py-3 backdrop-blur sm:px-8">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-ink">{company.name || "Firmă nedefinită"}</p>
-        <p className="text-[11px] text-muted">
-          CUI {company.cui} · CAEN {company.caenCode} · {assessment.metrics.issuedCount + assessment.metrics.receivedCount} documente e-Factura · până la {assessment.metrics.asOf}
-        </p>
-      </div>
+    <div className="min-w-0 max-w-full">
+      <label className="flex min-w-0 items-center gap-2">
+        <Building2 size={15} className="shrink-0 text-faint" />
+        <span className="sr-only">Firmă activă</span>
+        <select
+          className="min-w-0 max-w-[min(420px,calc(100vw-5rem))] truncate rounded-full border border-line bg-white/80 py-1.5 pl-3 pr-8 text-sm font-medium text-ink outline-none hover:border-line-strong focus:border-navy-3"
+          value={company.id}
+          onChange={(e) => switchCompany(e.target.value)}
+          title="Firmă activă — comută între firmele salvate"
+        >
+          {sorted.length === 0 && <option value="">Nicio firmă — adaug-o în Pasul 1</option>}
+          {sorted.map((c) => (
+            <option key={c.id} value={c.id}>
+              {companyLabel(c)}
+            </option>
+          ))}
+        </select>
+        <span className="hidden shrink-0 text-[11px] text-faint sm:inline">
+          {companies.length} {companies.length === 1 ? "firmă" : "firme"}
+        </span>
+      </label>
+      <p className="mt-1 truncate pl-6 text-[11px] text-faint">
+        {company.cui ? `CUI ${company.cui}` : "fără CUI"} · {company.caenCode ? `CAEN ${company.caenCode}` : "fără CAEN"} · sector {assessment.benchmark.sector.shortLabel} ·{" "}
+        {assessment.metrics.issuedCount + assessment.metrics.receivedCount} documente e-Factura ({dataset.source === "supabase" ? "Supabase + încărcate" : "încărcate"})
+        {assessment.metrics.issuedCount + assessment.metrics.receivedCount > 0 ? ` · până la ${assessment.metrics.asOf}` : ""}
+      </p>
+    </div>
+  );
+}
+
+function TopBar() {
+  const { uploads, resetUploads } = useAssessment();
+  return (
+    <div className="no-print flex flex-wrap items-center justify-between gap-3 px-4 pb-2 pt-5 sm:px-8">
+      <CompanySwitcher />
       <div className="flex flex-wrap items-center gap-2">
+        <PlanBadge />
         {uploads.length > 0 && (
-          <Button variant="ghost" onClick={resetUploads} title="Elimină facturile încărcate">
-            <RotateCcw size={15} /> {uploads.length} XML încărcate
+          <Button variant="secondary" onClick={resetUploads} title="Elimină facturile încărcate">
+            <RotateCcw size={14} /> {uploads.length} XML
           </Button>
         )}
         <XmlUploadButton />
@@ -228,23 +296,25 @@ function ScoreToastView() {
   const delta = Math.round((toast.to - toast.from) * 10) / 10;
   const up = delta >= 0;
   return (
-    <div role="status" key={toast.id} className="no-print animate-rise fixed bottom-4 right-4 z-50 w-[min(380px,calc(100vw-2rem))] rounded-2xl bg-navy p-4 text-white shadow-pop">
+    <div role="status" key={toast.id} className="no-print animate-rise fixed bottom-4 right-4 z-50 w-[min(360px,calc(100vw-2rem))] rounded-[22px] bg-navy p-5 text-white shadow-pop">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/50">Scor recalculat în timp real</p>
-          <p className="mt-1 text-sm font-bold">{toast.title}</p>
-          <p className="text-xs text-white/65">{toast.detail}</p>
+          <p className="text-[11px] text-white/45">Scor recalculat</p>
+          <p className="mt-1 text-sm font-medium">{toast.title}</p>
+          <p className="text-xs text-white/55">{toast.detail}</p>
         </div>
-        <button type="button" onClick={dismissToast} aria-label="Închide" className="text-white/50 hover:text-white">
+        <button type="button" onClick={dismissToast} aria-label="Închide" className="text-white/40 hover:text-white">
           <X size={16} />
         </button>
       </div>
-      <div className="mt-3 flex items-center gap-3">
-        <span className="text-2xl font-extrabold text-white/60">{num(toast.from)}</span>
-        <span className="text-white/40">→</span>
-        <span className="text-3xl font-extrabold">{num(toast.to)}</span>
-        <span className={cx("ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-bold", up ? "bg-emerald/20 text-emerald" : "bg-red/20 text-red-soft")}>
-          {up ? <ArrowUpRight size={15} /> : <ArrowDownRight size={15} />}
+      <div className="mt-4 flex items-baseline gap-3">
+        <span className="text-xl font-light text-white/45">{num(toast.from)}</span>
+        <ArrowRight size={14} className="self-center text-white/30" />
+        <span className="text-3xl font-light tracking-tight">
+          <Figure value={num(toast.to)} />
+        </span>
+        <span className={cx("ml-auto inline-flex items-center gap-1 self-center rounded-full px-2.5 py-1 text-xs", up ? "bg-white/10 text-[#9fd1b3]" : "bg-white/10 text-[#e8a9a4]")}>
+          {up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
           {up ? "+" : ""}
           {num(delta)}
         </span>
@@ -256,25 +326,33 @@ function ScoreToastView() {
 export function Shell({ children }: { children: ReactNode }) {
   const { hydrated } = useAssessment();
   return (
-    <div className={cx("flex min-h-screen transition-opacity duration-200", hydrated ? "opacity-100" : "opacity-0")}>
+    <div className={cx("flex min-h-screen transition-opacity duration-200 lg:p-3", hydrated ? "opacity-100" : "opacity-0")}>
       <Sidebar />
       <div className="min-w-0 flex-1">
         <MobileNav />
         <TopBar />
-        <main className="mx-auto w-full max-w-[1240px] px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>
       <ScoreToastView />
+      <UpgradePrompt />
     </div>
   );
 }
 
 export function PageHeader({ step, title, subtitle, action }: { step: number; title: string; subtitle: string; action?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-strong">Pasul {step} din 4</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-ink sm:text-[28px]">{title}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted">{subtitle}</p>
+        <div className="flex items-center gap-2.5">
+          <span className="flex gap-1" aria-hidden>
+            {STEPS.map((s, i) => (
+              <span key={s.id} className={cx("h-1 w-4 rounded-full", i < step ? "bg-navy" : "bg-line-strong")} />
+            ))}
+          </span>
+          <p className="text-xs text-faint">Pasul {step} din 4</p>
+        </div>
+        <h1 className="mt-3 text-[28px] font-normal leading-tight tracking-tight text-ink sm:text-[34px]">{title}</h1>
+        <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">{subtitle}</p>
       </div>
       {action}
     </div>
@@ -283,17 +361,17 @@ export function PageHeader({ step, title, subtitle, action }: { step: number; ti
 
 export function StepFooter({ prev, next, nextLabel }: { prev?: string; next?: string; nextLabel?: string }) {
   return (
-    <div className="no-print mt-8 flex items-center justify-between gap-3 border-t border-line pt-6">
+    <div className="no-print mt-10 flex items-center justify-between gap-3">
       {prev ? (
-        <Link href={prev} className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted hover:bg-card hover:text-ink">
-          ← Înapoi
+        <Link href={prev} className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm text-muted hover:bg-white/70 hover:text-ink">
+          <ArrowLeft size={15} /> Înapoi
         </Link>
       ) : (
         <span />
       )}
       {next && (
-        <Link href={next} className="rounded-xl bg-navy px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-navy-2">
-          {nextLabel ?? "Continuă"} →
+        <Link href={next} className="inline-flex items-center gap-2 rounded-full bg-navy px-6 py-3 text-sm font-medium text-white hover:bg-navy-2">
+          {nextLabel ?? "Continuă"} <ArrowRight size={15} />
         </Link>
       )}
     </div>

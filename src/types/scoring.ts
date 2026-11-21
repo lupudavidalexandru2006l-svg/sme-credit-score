@@ -1,7 +1,7 @@
 /**
  * Domain types for the Credit Ready platform.
  * UI components depend only on these interfaces, never on the data source
- * (synthetic generator, Supabase or uploaded UBL 2.1 XML).
+ * (Supabase or uploaded UBL 2.1 XML; the synthetic generator exists only as a test fixture).
  */
 
 // ---------------------------------------------------------------------------
@@ -30,26 +30,60 @@ export interface Invoice {
   /** PayableAmount (with VAT) as in the document (RON). */
   payableAmount: number;
   currency: string;
-  /** Collection date. Not part of e-Factura: synthetic bank data; null = unpaid / unknown. */
+  /** Collection date. Not part of e-Factura (bank data); null = unpaid / unknown. */
   paidDate: string | null;
   source: InvoiceSource;
 }
 
 export interface Company {
   id: string;
+  /** Required. Legal name as typed by the user ("Nord Fresh Distribuție SRL"). */
   name: string;
+  /** OPTIONAL: "" when unknown. Without it, invoices and portal.just.ro are matched on the normalized name. */
   cui: string;
+  /** OPTIONAL: "" when unknown. When present it is mapped to a benchmark sector automatically. */
   caenCode: string;
+  /** Benchmark sector key (see SECTOR_BENCHMARKS) chosen by hand when the CAEN code is missing. */
+  sector?: string;
+  /** Required. Administrator / CEO, also searched in portal.just.ro. */
   ceoName: string;
+  /** ISO timestamp, set when the company is first saved. */
+  createdAt?: string;
   city: string;
-  /** Salaries, rent, utilities, fuel... per month (RON). Synthetic accounting data. */
+  /** County of the registered office; falls back to the county of `city`. Used to locate court cases. */
+  county?: string;
+  /** Salaries, rent, utilities, fuel... per month (RON), DECLARED by the user (not in e-Factura). */
   monthlyFixedCosts: number;
-  /** Existing loans and leasing installments per month (RON). */
+  /** Existing loans and leasing installments per month (RON), declared (or the sum of `debts`). */
   existingMonthlyDebtService: number;
+  /** True once the user declared fixed costs and existing installments; until then DSCR is not computed. */
+  financialsDeclared?: boolean;
+  /** Credit lines copied from the free Centrala Riscului de Credit (BNR) / Biroul de Credit report. */
+  debts?: DebtLine[];
+  /** Official name returned by ANAF for the CUI (portal.just.ro searches it when present). */
+  officialName?: string;
+  /** The user confirmed they may search the administrator by name in public court records (GDPR). */
+  nameSearchConsent?: boolean;
+}
+
+export type DebtKind = "credit" | "leasing" | "linie" | "card" | "altele";
+
+/** One line of the CRC / Biroul de Credit report. */
+export interface DebtLine {
+  id: string;
+  lender: string;
+  kind: DebtKind;
+  /** Outstanding balance, RON. */
+  balance: number;
+  monthlyInstallment: number;
+  /** YYYY-MM (last installment). */
+  maturity: string;
+  /** Current delay in days (0 = up to date). */
+  daysLate: number;
 }
 
 export interface Dataset {
-  source: "supabase" | "synthetic-local";
+  source: "supabase" | "local" | "synthetic-local";
   company: Company;
   invoices: Invoice[];
 }
@@ -115,8 +149,24 @@ export interface SubScore {
 export interface BusinessScore {
   score: number;
   items: SubScore[];
+  /** Estimated monthly installment of the requested loan (annuity), RON. */
   loanInstallment: number;
+  /** EBITDA (operating cash flow) / total monthly debt service (existing + new). 99 = no debt at all. */
   dscr: number;
+  /** Indicative loan terms used for the installment. */
+  loan: { annualRatePct: number; months: number };
+  /** Off-season resilience: can the firm pay its fixed costs and installments in its 3 weakest months? */
+  resilience: {
+    weakMonths: string[];
+    weakMonthsAvgRevenue: number;
+    /** Gross margin earned in the weak months (revenue × gross margin), RON / month. */
+    weakMonthsMargin: number;
+    /** Fixed costs + existing debt service + new installment, RON / month. */
+    monthlyObligations: number;
+    ratio: number;
+  };
+  /** True when storno (381) > 5% of issued value in the last 3 months: -15 p on the DSO sub-score. */
+  stornoPenaltyApplied: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,8 +174,13 @@ export interface BusinessScore {
 // ---------------------------------------------------------------------------
 
 export interface SectorBenchmark {
+  /** Sector key: the reference CAEN code, or "IMM" for the all-sector SME benchmark. */
   caenCode: string;
+  /** Short sector name shown in the dropdown ("HoReCa", "Distribuție", "IT"...). */
+  shortLabel: string;
   label: string;
+  /** Seasonal sectors (HoReCa, agriculture, food production) — used by the bank matcher. */
+  seasonal: boolean;
   companies: number;
   /** For each indicator: [25th percentile, median, 75th percentile]. */
   dsoDays: [number, number, number];
@@ -206,10 +261,16 @@ export interface QuizEvaluation {
 
 export type InvestmentPurpose = "growth" | "working_capital" | "marketing" | "refinancing";
 
+export type CollateralKind = "imobil" | "echipament" | "fngcimm" | "fara";
+
 export interface InvestmentInput {
   purpose: InvestmentPurpose | null;
   ownContributionPct: number | null;
   requestedAmount: number | null;
+  /** Loan maturity in months for the simulator (default 60). */
+  termMonths?: number;
+  /** What the firm can offer as guarantee and its market value (RON). */
+  collateral?: { kind: CollateralKind; value: number };
 }
 
 export interface InvestmentEvaluation {
@@ -222,8 +283,6 @@ export interface InvestmentEvaluation {
 // ---------------------------------------------------------------------------
 // Legal check - portal.just.ro
 // ---------------------------------------------------------------------------
-
-export type PortalSimulationScenario = "clean" | "minor" | "many" | "critical";
 
 /** What the case is about, derived from categorie + obiect. */
 export type CaseKind =
@@ -307,13 +366,22 @@ export interface CourtCase {
   deduction: number;
   /** Step-by-step explanation of the level and deduction. */
   reasons: string[];
+  /**
+   * How sure we are the case belongs to the searched party (portal.just.ro has no CNP):
+   * "ridicata" = firm name, or the firm is a party too; "medie" = court in the firm's county;
+   * "scazuta" = court in another county (probable namesake). Missing on old saved results.
+   */
+  confidence?: "ridicata" | "medie" | "scazuta";
+  confidenceReasons?: string[];
+  /** The user's answer: it is their case, or a namesake (the bank re-checks with the CNP). */
+  userVerdict?: "confirmat" | "contestat";
 }
 
 export interface LegalCheckResult {
-  query: { companyName: string; ceoName: string };
-  source: "portal.just.ro" | "simulation" | "fallback";
+  query: { companyName: string; ceoName: string; companyCounty?: string };
+  /** "fallback" = the portal did not answer: no score, nothing assumed. */
+  source: "portal.just.ro" | "fallback";
   isFallback: boolean;
-  isSimulated: boolean;
   cases: CourtCase[];
   totalFound: number;
   /** Cases the portal returned where no party had exactly the searched name. */
@@ -327,6 +395,8 @@ export interface LegalCheckResult {
   legalScore: number;
   /** At least one critical (level 4) case: legal score forced to 0 and a red alert is shown. */
   integrityKillSwitch: boolean;
+  /** Administrator cases with uncertain identity the user has not confirmed or disputed yet. */
+  uncertainCount?: number;
   message: string;
   checkedAt: string;
 }
@@ -343,11 +413,18 @@ export interface FinalScoreResult {
   status: ScoreStatus;
   pillars: {
     business: { score: number; points: number; maxPoints: 70 };
-    human: { score: number; points: number; maxPoints: 15; quizScore: number; legalScore: number };
+    human: { score: number; points: number; maxPoints: 15; quizScore: number; legalScore: number | null; /** Set when S_Uman used ScorVerificariExterne (5 real sources). */ externalScore?: number };
     investment: { score: number; points: number; maxPoints: 15; formScore: number; benchmarkScore: number };
   };
   quizKillSwitch: boolean;
   warnings: string[];
+  /**
+   * False while real data is missing (no e-Factura invoices, financials not declared, no external check
+   * answered). The UI then shows "—" instead of a number: a score is never computed on invented inputs.
+   */
+  complete?: boolean;
+  /** What is still missing for a complete score (human-readable). */
+  missing?: string[];
 }
 
 export interface ScoreDriver {

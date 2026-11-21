@@ -5,6 +5,18 @@ import type { BenchmarkItem, MonthPoint } from "@/types/scoring";
 import { monthLabel, num, ron } from "@/lib/util";
 import { cx } from "./ui";
 
+/** A formatted number with its decimal part dimmed ("68,3" → 68 + ",3"). */
+export function Figure({ value }: { value: string }) {
+  const i = value.lastIndexOf(",");
+  if (i < 0) return <>{value}</>;
+  return (
+    <>
+      {value.slice(0, i)}
+      <span className="opacity-40">{value.slice(i)}</span>
+    </>
+  );
+}
+
 /** Circular score gauge built from two SVG circles. */
 export function ScoreRing({
   score,
@@ -42,10 +54,10 @@ export function ScoreRing({
       </svg>
       <div className="absolute inset-0 grid place-items-center text-center">
         <div>
-          <p className={cx("font-extrabold tracking-tight", dark ? "text-white" : "text-ink")} style={{ fontSize: size * 0.24, lineHeight: 1 }}>
-            {num(v)}
+          <p className={cx("font-light tracking-tight", dark ? "text-white" : "text-ink")} style={{ fontSize: size * 0.26, lineHeight: 1 }}>
+            <Figure value={num(v)} />
           </p>
-          <p className={cx("mt-1 text-[11px] font-bold uppercase tracking-wider", dark ? "text-white/60" : "text-faint")}>{label ?? "din 100"}</p>
+          <p className={cx("mt-1.5 text-[11px]", dark ? "text-white/60" : "text-faint")}>{label ?? "din 100"}</p>
         </div>
       </div>
     </div>
@@ -61,9 +73,9 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-semibold text-muted">
-        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-navy-3" /> Vânzări nete (fără TVA)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald" /> din XML încărcat</span>
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-medium text-muted">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-navy-3/30" /> Vânzări nete (fără TVA)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald" /> din XML încărcat</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 bg-faint" /> Achiziții</span>
       </div>
       <div className="relative">
@@ -81,10 +93,10 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
                 onFocus={() => setHover(i)}
                 className="group relative flex h-full flex-1 flex-col justify-end"
               >
-                <span className="absolute inset-x-0 border-t-2 border-dashed border-faint/70" style={{ bottom: hp }} />
-                {up > 0 && <span className="w-full rounded-t-md bg-emerald transition-all duration-500" style={{ height: (up / max) * H }} />}
+                <span className="absolute inset-x-0 border-t border-dashed border-faint" style={{ bottom: hp }} />
+                {up > 0 && <span className="w-full rounded-t-lg bg-emerald transition-all duration-500" style={{ height: (up / max) * H }} />}
                 <span
-                  className={cx("w-full bg-navy-3 transition-all duration-500", up > 0 ? "" : "rounded-t-md", hover === i ? "opacity-100" : "opacity-85")}
+                  className={cx("w-full transition-all duration-500", up > 0 ? "" : "rounded-t-lg", hover === i ? "bg-navy-3/55" : "bg-navy-3/25")}
                   style={{ height: (base / max) * H }}
                 />
               </button>
@@ -92,8 +104,8 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
           })}
         </div>
         {active && (
-          <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded-xl bg-navy px-3 py-2 text-[11px] text-white shadow-pop">
-            <p className="font-bold">{monthLabel(active.month)}</p>
+          <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded-xl bg-navy/95 px-3 py-2 text-[11px] text-white shadow-pop backdrop-blur">
+            <p className="font-semibold">{monthLabel(active.month)}</p>
             <p>Vânzări: {ron(active.revenue)}</p>
             {active.uploadedRevenue !== 0 && <p className="text-emerald-soft">din XML: {ron(active.uploadedRevenue)}</p>}
             <p>Achiziții: {ron(active.purchases)}</p>
@@ -103,7 +115,7 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
       </div>
       <div className="mt-2 flex gap-1.5 sm:gap-2.5">
         {months.map((m) => (
-          <span key={m.month} className="flex-1 text-center text-[10px] font-semibold text-faint">
+          <span key={m.month} className="flex-1 text-center text-[10px] font-medium text-faint">
             {monthLabel(m.month, false)}
           </span>
         ))}
@@ -122,11 +134,11 @@ export function BenchmarkRow({ item }: { item: BenchmarkItem }) {
   return (
     <div className="py-3">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm font-bold text-ink">{item.label}</p>
+        <p className="text-sm font-semibold text-ink">{item.label}</p>
         <p className="text-xs">
-          <span className="font-bold text-ink">{fmt(item.company)}</span>
+          <span className="font-semibold text-ink">{fmt(item.company)}</span>
           <span className="text-muted"> vs. mediana {fmt(item.median)} · </span>
-          <span className={cx("font-bold", tone)}>{item.verdict}</span>
+          <span className={cx("font-semibold", tone)}>{item.verdict}</span>
           <span className="text-muted"> · {num(item.score)} p</span>
         </p>
       </div>

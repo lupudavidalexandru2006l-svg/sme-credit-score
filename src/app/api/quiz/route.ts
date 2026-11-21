@@ -9,15 +9,16 @@ import { findCompany, getSupabase, loadDataset } from "@/lib/supabase/server";
  *
  *  POST /api/quiz   (webhook, called by the quiz site when the user finishes)
  *    headers: x-quiz-secret: <QUIZ_WEBHOOK_SECRET>   (only checked if the env var is set)
- *    body: { cui: "RO45127893", answers: { revenueEstimate, paymentTerm, topClientShare, mainSupplier, hasSignificantCreditNotes } }
+ *    body: { companyId: "<uuid>" | cui: "RO45127893", answers: { revenueEstimate, paymentTerm, topClientShare, mainSupplier, hasSignificantCreditNotes } }
+ *    (companyId works for companies saved without a CUI)
  *    → validates the answers against e-Factura and stores them (Supabase `assessments`, quiz_source = 'external').
  *
- *  GET  /api/quiz?cui=RO45127893  → latest external answers, imported by the onboarding page.
+ *  GET  /api/quiz?companyId=<uuid> (or ?cui=RO45127893) → latest external answers, imported by the onboarding page.
  */
 
 interface StoredQuiz {
   answers: QuizAnswers;
-  score: number;
+  score: number | null;
   receivedAt: string;
 }
 
@@ -44,29 +45,31 @@ export async function POST(request: NextRequest) {
   if (secret && request.headers.get("x-quiz-secret") !== secret) {
     return NextResponse.json({ ok: false, error: "x-quiz-secret invalid" }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { cui?: string; answers?: Record<string, unknown> } | null;
-  if (!body?.cui || !body.answers) return NextResponse.json({ ok: false, error: "Body: { cui, answers } obligatoriu." }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as { companyId?: string; cui?: string; answers?: Record<string, unknown> } | null;
+  const ref = body?.companyId || body?.cui;
+  if (!ref || !body?.answers) return NextResponse.json({ ok: false, error: "Body: { companyId | cui, answers } obligatoriu." }, { status: 400 });
 
   const answers = sanitize(body.answers);
-  const dataset = await loadDataset(body.cui);
-  const quiz = evaluateFinancialQuiz(answers, quizTruthFromMetrics(computeMetrics(dataset.invoices, dataset.company)));
-  const stored: StoredQuiz = { answers, score: quiz.total, receivedAt: new Date().toISOString() };
-  memory.set(body.cui, stored);
+  const dataset = await loadDataset(ref);
+  // The quiz is validated only against the company's REAL invoices; without them the answers are stored unscored.
+  const quiz = dataset.company && dataset.invoices.length ? evaluateFinancialQuiz(answers, quizTruthFromMetrics(computeMetrics(dataset.invoices, dataset.company))) : null;
+  const stored: StoredQuiz = { answers, score: quiz?.total ?? null, receivedAt: new Date().toISOString() };
+  memory.set(ref, stored);
 
   const sb = getSupabase();
   if (sb) {
-    const company = await findCompany(sb, body.cui).catch(() => null);
+    const company = await findCompany(sb, ref).catch(() => null);
     if (company) {
-      await sb.from("assessments").insert({ company_id: company.id, quiz_answers: answers, quiz_score: quiz.total, quiz_source: "external" });
+      await sb.from("assessments").insert({ company_id: company.id, quiz_answers: answers, quiz_score: quiz?.total ?? null, quiz_source: "external" });
     }
   }
-  return NextResponse.json({ ok: true, score: quiz.total, level: quiz.levelLabel });
+  return NextResponse.json({ ok: true, score: quiz?.total ?? null, level: quiz?.levelLabel ?? "nevalidat: firma nu are încă facturi e-Factura încărcate" });
 }
 
 export async function GET(request: NextRequest) {
   await connection();
-  const cui = request.nextUrl.searchParams.get("cui");
-  if (!cui) return NextResponse.json({ found: false, error: "cui lipsă" }, { status: 400 });
+  const cui = request.nextUrl.searchParams.get("companyId") ?? request.nextUrl.searchParams.get("cui");
+  if (!cui) return NextResponse.json({ found: false, error: "companyId sau cui lipsă" }, { status: 400 });
 
   const sb = getSupabase();
   if (sb) {

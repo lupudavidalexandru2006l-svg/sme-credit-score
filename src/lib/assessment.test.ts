@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { computeAssessment } from "./assessment.ts";
-import { syntheticDataset } from "./data/synthetic.ts";
+import { syntheticDataset } from "./data/test-fixtures.ts";
 import { parseEFacturaXml } from "./efactura/parser.ts";
 import { computeMetrics } from "./metrics.ts";
 import { dscrScore, estimateInstallment, quartileScore } from "./scoringEngine.ts";
@@ -11,7 +11,7 @@ import type { InvestmentInput, Invoice, QuizAnswers } from "../types/scoring";
 
 const { company, invoices } = syntheticDataset();
 const sample = (f: string) => {
-  const r = parseEFacturaXml(readFileSync(new URL(`../../public/samples/${f}`, import.meta.url), "utf8"), f, company);
+  const r = parseEFacturaXml(readFileSync(new URL(`./data/test-xml/${f}`, import.meta.url), "utf8"), f, company);
   assert.ok(r.ok, r.error);
   return r.invoice!;
 };
@@ -74,9 +74,26 @@ test("action plan always has 3-5 items", () => {
 test("helpers: installment, DSCR and quartile scoring", () => {
   assert.equal(Math.round(estimateInstallment(900_000)), 18902);
   assert.equal(dscrScore(1.0), 30);
-  assert.equal(dscrScore(1.5), 90);
+  assert.equal(dscrScore(1.5), 100);
+  assert.equal(dscrScore(1.3), 80);
   assert.equal(quartileScore(30, [30, 42, 58], false), 100);
   assert.equal(quartileScore(42, [30, 42, 58], false), 60);
   assert.equal(quartileScore(19, [14, 19, 24], true), 60);
   assert.equal(quartileScore(24, [14, 19, 24], true), 100);
+});
+
+test("consultant layer: no conclusion and no sustainable amount without real inputs", async () => {
+  const { consultantConclusion, sustainableAmount, documentsFor, financingInstruments } = await import("./consultant.ts");
+  const { newCompanyRecord } = await import("./company.ts");
+  const { computeAssessment } = await import("./assessment.ts");
+  const company = newCompanyRecord({ id: "c1", name: "Firmă Nouă SRL", cui: "", caenCode: "", ceoName: "Ana Pop" });
+  const investment = { purpose: "growth" as const, ownContributionPct: 20, requestedAmount: 100_000 };
+  const a = computeAssessment({ company, invoices: [], quiz: { revenueEstimate: null, paymentTerm: null, topClientShare: null, mainSupplier: null, hasSignificantCreditNotes: null }, investment, legal: null });
+  const input = { company, investment, legal: null, bilant: [], ageMonths: null };
+  assert.equal(a.final.complete, false);
+  assert.ok((a.final.missing ?? []).length >= 2);
+  assert.equal(sustainableAmount(a, input), 0);
+  assert.equal(consultantConclusion(a, input).ready, false);
+  assert.ok(documentsFor(input).some((d) => d.id === "oferte"));
+  assert.ok(financingInstruments(a, input).some((i) => i.id === "leasing"));
 });

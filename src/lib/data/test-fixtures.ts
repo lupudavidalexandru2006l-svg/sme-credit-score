@@ -1,9 +1,18 @@
 /**
- * Deterministic synthetic e-Factura history (12 months) for a FICTIONAL Romanian SME.
- * Every company name and CUI below is invented. The same generator feeds the app
- * (local mode) and `supabase/seed.sql` (via `npm run seed:sql`), so both match.
+ * TEST FIXTURES ONLY — never imported by the app, the API routes or the database seed.
+ * Deterministic synthetic e-Factura history (12 months) for a FICTIONAL Romanian SME, used by
+ * the unit tests (src/lib/*.test.ts) to exercise the scoring formulas on a known dataset.
+ * Every company name and CUI below is invented.
  */
 import type { Company, Dataset, Invoice } from "../../types/scoring";
+import { invoiceKey } from "../company.ts";
+import { hashString, normalizeCompanyName } from "../company.ts";
+
+/** "Nord Fresh Distribuție SRL" → "NFD": invoice number prefix of the fixture data. */
+function companyInitials(name: string) {
+  const words = normalizeCompanyName(name).toUpperCase().split(" ").filter(Boolean);
+  return (words.map((w) => w[0]).join("").slice(0, 4) || "IMM").replace(/[^A-Z0-9]/g, "X");
+}
 import { addDays, addMonths, daysInMonth, round2 } from "../util.ts";
 
 export const DEMO_COMPANY: Company = {
@@ -15,6 +24,8 @@ export const DEMO_COMPANY: Company = {
   city: "Brașov",
   monthlyFixedCosts: 62_000,
   existingMonthlyDebtService: 30_000,
+  financialsDeclared: true,
+  createdAt: "2026-11-01T00:00:00.000Z",
 };
 
 /** First month of the synthetic window; 12 months: Nov 2025 - Oct 2026. */
@@ -99,19 +110,61 @@ function issueDay(month: string, k: number, n: number, rnd: () => number) {
   return `${month}-${String(day).padStart(2, "0")}`;
 }
 
-export function generateSyntheticInvoices(company: Company = DEMO_COMPANY): Invoice[] {
-  const rnd = prng(4639);
+/** Knobs of the generator. The demo company uses DEMO_OPTIONS (output unchanged since v1). */
+export interface SyntheticOptions {
+  seed: number;
+  /** Multiplier on BASE_MONTHLY_REVENUE (700k RON). */
+  scale: number;
+  /** Invoice number prefix, e.g. "NFD" → NFD-2026-0001. */
+  prefix: string;
+  /** Weight of the biggest client (the others are rescaled); undefined = demo weights. */
+  topClientWeight?: number;
+}
+
+export const DEMO_OPTIONS: SyntheticOptions = { seed: 4639, scale: 1, prefix: "NFD" };
+
+/**
+ * Deterministic profile of a NEW company, derived from its id: revenue size (≈105k-945k RON / month),
+ * client concentration (15-40%) and matching fixed costs / existing debt. Same id → same history,
+ * so the browser (local mode) and the API (Supabase seeding) generate identical invoices.
+ */
+export function syntheticProfile(company: Pick<Company, "id" | "name">) {
+  if (company.id === DEMO_COMPANY.id) {
+    return { options: DEMO_OPTIONS, monthlyFixedCosts: DEMO_COMPANY.monthlyFixedCosts, existingMonthlyDebtService: DEMO_COMPANY.existingMonthlyDebtService };
+  }
+  const h = hashString(company.id);
+  const scale = 0.15 + ((h % 1000) / 1000) * 1.2;
+  const topClientWeight = 0.15 + ((h >>> 10) % 26) / 100;
+  const debtFactor = 0.3 + ((h >>> 16) % 100) / 100; // 0.3-1.3 × the demo debt, scaled
+  const options: SyntheticOptions = { seed: h % 2_147_483_647, scale, prefix: companyInitials(company.name), topClientWeight };
+  return {
+    options,
+    monthlyFixedCosts: Math.round((62_000 * scale) / 100) * 100,
+    existingMonthlyDebtService: Math.round((30_000 * scale * debtFactor) / 100) * 100,
+  };
+}
+
+function clientsFor(opts: SyntheticOptions): ClientProfile[] {
+  if (opts.topClientWeight === undefined) return CLIENTS;
+  const top = opts.topClientWeight;
+  const restOld = 1 - CLIENTS[0].weight;
+  return CLIENTS.map((c, i) => ({ ...c, weight: i === 0 ? top : (c.weight * (1 - top)) / restOld }));
+}
+
+export function generateSyntheticInvoices(company: Company = DEMO_COMPANY, opts: SyntheticOptions = DEMO_OPTIONS): Invoice[] {
+  const rnd = prng(opts.seed);
   const invoices: Invoice[] = [];
   let seq = 0;
-  const nextNumber = (date: string) => `NFD-${date.slice(0, 4)}-${String(++seq).padStart(4, "0")}`;
+  const nextNumber = (date: string) => `${opts.prefix}-${date.slice(0, 4)}-${String(++seq).padStart(4, "0")}`;
+  const clients = clientsFor(opts);
 
   for (let m = 0; m < 12; m++) {
     const month = addMonths(SYNTHETIC_START, m);
-    const monthRevenue = BASE_MONTHLY_REVENUE * SEASONALITY[m];
+    const monthRevenue = BASE_MONTHLY_REVENUE * opts.scale * SEASONALITY[m];
 
     // --- Sales (issued) ---------------------------------------------------
     const issuedThisMonth: Invoice[] = [];
-    for (const c of CLIENTS) {
+    for (const c of clients) {
       const clientTotal = monthRevenue * c.weight * (0.94 + rnd() * 0.12);
       split(clientTotal, c.perMonth, rnd).forEach((amount, k) => {
         const issueDate = issueDay(month, k, c.perMonth, rnd);
@@ -190,12 +243,33 @@ export function generateSyntheticInvoices(company: Company = DEMO_COMPANY): Invo
   return invoices.map((inv) => ({ ...inv, id: invoiceKey(inv) }));
 }
 
-export const invoiceKey = (inv: Pick<Invoice, "direction" | "supplierCui" | "number">) =>
-  `${inv.direction}:${inv.supplierCui.replace(/\D/g, "")}:${inv.number}`;
 
-let cached: Dataset | null = null;
+const cache = new Map<string, Invoice[]>();
+
+/** 12-month synthetic e-Factura history of ANY company (memoized by id + identity). */
+export function syntheticInvoicesFor(company: Company): Invoice[] {
+  const key = `${company.id}|${company.name}|${company.cui}`;
+  let list = cache.get(key);
+  if (!list) {
+    list = generateSyntheticInvoices(company, syntheticProfile(company).options);
+    cache.set(key, list);
+  }
+  return list;
+}
+
+/** A fixture company record with the synthetic accounting data (fixed costs, existing debt) filled in. */
+export function fixtureCompanyRecord(input: Pick<Company, "id" | "name" | "cui" | "caenCode" | "ceoName"> & Partial<Company>): Company {
+  const profile = syntheticProfile(input);
+  return {
+    city: "",
+    monthlyFixedCosts: profile.monthlyFixedCosts,
+    existingMonthlyDebtService: profile.existingMonthlyDebtService,
+    financialsDeclared: true,
+    createdAt: new Date().toISOString(),
+    ...input,
+  };
+}
 
 export function syntheticDataset(): Dataset {
-  cached ??= { source: "synthetic-local", company: DEMO_COMPANY, invoices: generateSyntheticInvoices() };
-  return cached;
+  return { source: "synthetic-local", company: DEMO_COMPANY, invoices: syntheticInvoicesFor(DEMO_COMPANY) };
 }

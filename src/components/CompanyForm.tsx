@@ -1,0 +1,215 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Building2, CircleAlert, CircleCheck, LoaderCircle, Plus, Save } from "lucide-react";
+import { caenWarning, cuiWarning } from "@/lib/company";
+import { cleanCaen, findSector, GENERAL_SECTOR, SECTOR_BENCHMARKS, sectorForCaen } from "@/lib/data/benchmarks";
+import { companyCounty, COUNTIES } from "@/lib/scoringEngine";
+import { useAssessment, type CompanyDraft } from "./AssessmentProvider";
+import { Badge, Button, Card, CardHeader, cx, Field, inputCls } from "./ui";
+
+const fromCompany = (c: {
+  name: string;
+  cui: string;
+  caenCode: string;
+  sector?: string;
+  ceoName: string;
+  county?: string;
+  city?: string;
+  nameSearchConsent?: boolean;
+}): CompanyDraft => ({
+  name: c.name,
+  cui: c.cui,
+  caenCode: c.caenCode,
+  sector: c.sector ?? sectorForCaen(c.caenCode) ?? GENERAL_SECTOR,
+  ceoName: c.ceoName,
+  county: companyCounty(c) || undefined,
+  nameSearchConsent: Boolean(c.nameSearchConsent),
+});
+
+const EMPTY_DRAFT: CompanyDraft = { name: "", cui: "", caenCode: "", sector: GENERAL_SECTOR, ceoName: "", nameSearchConsent: false };
+
+/**
+ * Step 1 "Date firmă". Name and CEO are required; CUI and CAEN are optional and never block saving.
+ * Saving finds the company (by CUI, or by normalized name) or creates it — previous companies stay stored.
+ * The fields re-sync when the active company changes (save or header switch); the save message stays.
+ */
+export function CompanyForm() {
+  const { company, companies, saveCompany, supabase, setPendingDraft } = useAssessment();
+  const [draft, setDraft] = useState<CompanyDraft>(() => fromCompany(company));
+  // No company yet: the form starts directly in "new company" mode.
+  const [isNew, setIsNew] = useState(() => !company.id);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [touched, setTouched] = useState(false);
+  const [syncedId, setSyncedId] = useState(company.id);
+  // Adjust state while rendering when the active company changes (React's recommended pattern, no effect).
+  if (syncedId !== company.id) {
+    setSyncedId(company.id);
+    setDraft(fromCompany(company));
+    setIsNew(!company.id);
+    setTouched(false);
+  }
+
+  const set = (patch: Partial<CompanyDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    setResult(null);
+  };
+  const caen = cleanCaen(draft.caenCode);
+  const mapped = sectorForCaen(draft.caenCode);
+  const nameMissing = !draft.name.trim();
+  const ceoMissing = !draft.ceoName.trim();
+  const dirty =
+    isNew ||
+    draft.name.trim() !== company.name ||
+    draft.ceoName.trim() !== company.ceoName ||
+    draft.cui.trim() !== company.cui ||
+    caen !== company.caenCode ||
+    (draft.county ?? "") !== (companyCounty(company) ?? "") ||
+    Boolean(draft.nameSearchConsent) !== Boolean(company.nameSearchConsent) ||
+    (!mapped && draft.sector !== (company.sector ?? GENERAL_SECTOR));
+
+  // The unsaved form is shared with "Continuă": going to step 2 saves it first, so step 2 never shows another company.
+  useEffect(() => {
+    setPendingDraft(dirty && !nameMissing && !ceoMissing ? draft : null);
+  }, [dirty, nameMissing, ceoMissing, draft, setPendingDraft]);
+  useEffect(() => () => setPendingDraft(null), [setPendingDraft]);
+
+  const submit = async () => {
+    setTouched(true);
+    if (nameMissing || ceoMissing) return;
+    setBusy(true);
+    try {
+      const r = await saveCompany(draft);
+      setResult(r);
+      if (r.ok) setIsNew(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<Building2 size={18} />}
+        title={isNew ? "Firmă nouă" : "Date firmă"}
+        subtitle={
+          isNew
+            ? "Doar numele firmei și al administratorului sunt obligatorii. CUI și CAEN sunt opționale."
+            : `Firma activă · ${companies.length} ${companies.length === 1 ? "firmă salvată" : "firme salvate"}${supabase?.configured && !supabase.error ? " în Supabase" : " în browser"}`
+        }
+        action={
+          !isNew && (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDraft(EMPTY_DRAFT);
+                setIsNew(true);
+                setTouched(false);
+                setResult(null);
+              }}
+            >
+              <Plus size={14} /> Firmă nouă
+            </Button>
+          )
+        }
+      />
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Field label={<>Denumire firmă (SRL) <span className="text-red">*</span></>} hint={touched && nameMissing ? <span className="text-red">Obligatoriu.</span> : undefined}>
+          <input className={inputCls} value={draft.name} placeholder="ex. Bistro La Mama SRL" onChange={(e) => set({ name: e.target.value })} />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label={<>Administrator / CEO <span className="text-red">*</span></>}
+            hint={touched && ceoMissing ? <span className="text-red">Obligatoriu.</span> : "Căutat și el în portal.just.ro (potrivire pe numele complet)."}
+          >
+            <input className={inputCls} value={draft.ceoName} placeholder="ex. Ana Popescu" onChange={(e) => set({ ceoName: e.target.value })} />
+          </Field>
+          <Field label={<>Județul sediului <span className="text-faint">(opțional)</span></>} hint="Portalul nu are CNP: comparăm județul instanței ca să deosebim omonimii.">
+            <select className={inputCls} value={draft.county ?? ""} onChange={(e) => set({ county: e.target.value || undefined })}>
+              <option value="">Nespecificat</option>
+              {COUNTIES.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label={<>CUI <span className="text-faint">(opțional)</span></>}
+            hint={cuiWarning(draft.cui) ?? (draft.cui.trim() ? "Identifică facturile emise / primite." : "Fără CUI: facturile și portal.just.ro se potrivesc după numele firmei.")}
+          >
+            <input className={inputCls} value={draft.cui} placeholder="ex. RO45127893" onChange={(e) => set({ cui: e.target.value.toUpperCase() })} />
+          </Field>
+          <Field
+            label={<>Cod CAEN <span className="text-faint">(opțional)</span></>}
+            hint={caenWarning(draft.caenCode) ?? (mapped ? `→ sector ${findSector(mapped).shortLabel}` : caen ? "Cod necunoscut în benchmark: alege sectorul mai jos." : "Lipsă: alege sectorul de activitate mai jos.")}
+          >
+            <input className={inputCls} value={draft.caenCode} inputMode="numeric" placeholder="ex. 5610" onChange={(e) => set({ caenCode: e.target.value })} />
+          </Field>
+        </div>
+        <label className="flex items-start gap-2.5 rounded-xl border border-line bg-canvas px-3.5 py-3 text-xs leading-relaxed text-muted">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[#16213e]"
+            checked={Boolean(draft.nameSearchConsent)}
+            onChange={(e) => set({ nameSearchConsent: e.target.checked })}
+          />
+          <span>
+            Administratorul este de acord să fie căutat după nume în dosarele publice de pe portal.just.ro (GDPR, art. 6 alin. 1 lit. a). Fără acord verificăm doar firma; datele sunt
+            folosite numai pentru această evaluare.
+          </span>
+        </label>
+        {mapped ? (
+          <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            Sector pentru comparația cu industria: <Badge tone="emerald">{findSector(mapped).shortLabel}</Badge>
+            <span className="text-faint">mapat automat din CAEN {caen}</span>
+          </p>
+        ) : (
+          <Field label="Sector de activitate" hint="Folosit în S_Investiție pentru comparația cu industria (benchmark p25 / mediană / p75).">
+            <select className={inputCls} value={draft.sector} onChange={(e) => set({ sector: e.target.value })}>
+              {SECTOR_BENCHMARKS.map((s) => (
+                <option key={s.caenCode} value={s.caenCode}>
+                  {s.shortLabel}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <Button type="submit" disabled={busy || (!dirty && !isNew)}>
+            {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
+            {isNew ? "Salvează și analizează firma" : dirty ? "Salvează modificările" : "Firmă salvată"}
+          </Button>
+          {isNew && company.id && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDraft(fromCompany(company));
+                setIsNew(false);
+                setTouched(false);
+              }}
+            >
+              Renunță
+            </Button>
+          )}
+        </div>
+        {result && (
+          <p className={cx("flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-xs", result.ok ? "bg-emerald-soft text-emerald-strong" : "bg-red-soft text-red")}>
+            {result.ok ? <CircleCheck size={14} className="mt-0.5 shrink-0" /> : <CircleAlert size={14} className="mt-0.5 shrink-0" />}
+            {result.message}
+          </p>
+        )}
+      </form>
+    </Card>
+  );
+}

@@ -6,11 +6,12 @@ import { INVESTMENT_PURPOSES, LOAN_ANNUAL_RATE, LOAN_MONTHS } from "@/lib/scorin
 import { num, pct, ron } from "@/lib/util";
 import { useAssessment } from "../AssessmentProvider";
 import { BenchmarkRow, ScoreRing } from "../charts";
+import { LoanSimulator } from "../LoanSimulator";
 import { PageHeader, StepFooter } from "../Shell";
 import { Badge, Card, CardHeader, cx, inputCls } from "../ui";
 
 export function InvestmentStep() {
-  const { investment, setInvestment, assessment, markVisited } = useAssessment();
+  const { company, investment, setInvestment, assessment, markVisited } = useAssessment();
   const m = assessment.metrics;
   const ev = assessment.investment;
   const bench = assessment.benchmark;
@@ -41,7 +42,7 @@ export function InvestmentStep() {
           <div className="space-y-6">
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-bold text-ink">1. Destinația principală a finanțării</p>
+                <p className="text-sm font-semibold text-ink">1. Destinația principală a finanțării</p>
                 <Badge tone="navy">{pts("purpose")}/50 p</Badge>
               </div>
               <div role="radiogroup" aria-label="Destinația finanțării" className="grid gap-2 sm:grid-cols-2">
@@ -57,8 +58,8 @@ export function InvestmentStep() {
                       className={cx("rounded-xl border p-3.5 text-left transition-colors", active ? "border-navy bg-navy text-white" : "border-line-strong bg-white hover:border-navy-3")}
                     >
                       <span className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold">{p.label}</span>
-                        <span className={cx("text-xs font-bold", active ? "text-emerald-soft" : "text-faint")}>{p.points} p</span>
+                        <span className="text-sm font-semibold">{p.label}</span>
+                        <span className={cx("text-xs font-semibold", active ? "text-emerald-soft" : "text-faint")}>{p.points} p</span>
                       </span>
                       <span className={cx("mt-0.5 block text-xs", active ? "text-white/70" : "text-muted")}>{p.hint}</span>
                     </button>
@@ -69,7 +70,7 @@ export function InvestmentStep() {
 
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-bold text-ink">2. Aport propriu (avans)</p>
+                <p className="text-sm font-semibold text-ink">2. Aport propriu (avans)</p>
                 <Badge tone="navy">{pts("ownContribution")}/30 p</Badge>
               </div>
               <div className="flex items-center gap-4">
@@ -88,12 +89,12 @@ export function InvestmentStep() {
                     type="number"
                     min={0}
                     max={100}
-                    className={cx(inputCls, "pr-7 text-right font-bold")}
+                    className={cx(inputCls, "pr-7 text-right font-semibold")}
                     value={own ?? ""}
                     placeholder="—"
                     onChange={(e) => setInvestment({ ownContributionPct: e.target.value === "" ? null : Math.max(0, Math.min(100, Number(e.target.value))) })}
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-faint">%</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-faint">%</span>
                 </div>
               </div>
               <p className="mt-1.5 text-[11px] text-muted">peste 20%: 30 p · 10–20%: 20 p · sub 10%: 5 p</p>
@@ -101,13 +102,13 @@ export function InvestmentStep() {
 
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-bold text-ink">3. Suma solicitată</p>
+                <p className="text-sm font-semibold text-ink">3. Suma solicitată</p>
                 <Badge tone="navy">{pts("leverage")}/20 p</Badge>
               </div>
               <div className="relative">
                 <input
                   inputMode="numeric"
-                  className={cx(inputCls, "pr-14 text-base font-bold")}
+                  className={cx(inputCls, "pr-14 text-base font-semibold")}
                   placeholder="ex. 900.000"
                   value={amountText}
                   onChange={(e) => {
@@ -116,14 +117,14 @@ export function InvestmentStep() {
                     setInvestment({ requestedAmount: digits ? Number(digits) : null });
                   }}
                 />
-                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-faint">RON</span>
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-faint">RON</span>
               </div>
               <div className="mt-3 rounded-xl bg-canvas p-4">
                 <div className="flex flex-wrap justify-between gap-2 text-xs">
                   <span className="text-muted">
-                    CA anualizată din e-Factura (media lunară × 12): <strong className="text-ink">{ron(m.annualizedRevenue)}</strong>
+                    CA anualizată din e-Factura (media lunară × 12): <strong className="text-ink">{assessment.dataStatus.hasInvoices ? ron(m.annualizedRevenue) : "fără facturi încărcate"}</strong>
                   </span>
-                  <span className="font-bold text-ink">{pct(ratio * 100)} din CA</span>
+                  <span className="font-semibold text-ink">{pct(ratio * 100)} din CA</span>
                 </div>
                 <div className="relative mt-2 h-2.5 rounded-full bg-white">
                   <div className={cx("h-full rounded-full transition-all duration-500", ratioTone)} style={{ width: `${Math.min(100, ratio * 100)}%` }} />
@@ -137,11 +138,11 @@ export function InvestmentStep() {
                 </div>
                 {(investment.requestedAmount ?? 0) > 0 && (
                   <p className="mt-3 text-xs text-muted">
-                    Rată estimată: <strong className="text-ink">{ron(assessment.business.loanInstallment)}/lună</strong> ({LOAN_ANNUAL_RATE * 100}%/an, {LOAN_MONTHS} luni) → DSCR{" "}
-                    <strong className={assessment.business.dscr < 1.2 ? "text-red" : "text-ink"}>{num(assessment.business.dscr)}×</strong> (influențează și pilonul Business).
+                    Rată estimată: <strong className="text-ink">{ron(assessment.business.loanInstallment)}/lună</strong> ({LOAN_ANNUAL_RATE * 100}%/an, {investment.termMonths ?? LOAN_MONTHS} luni) → DSCR{" "}
+                    <strong className={assessment.business.dscr < 1.25 ? "text-red" : "text-ink"}>{num(assessment.business.dscr)}×</strong> (prag BCR 1,25×; influențează și pilonul Business).
                   </p>
                 )}
-                {ev.overLeveragedRequest && <p className="mt-2 text-xs font-bold text-red">Alertă de supraîndatorare: suma depășește 50% din CA anualizată.</p>}
+                {ev.overLeveragedRequest && <p className="mt-2 text-xs font-semibold text-red">Alertă de supraîndatorare: suma depășește 50% din CA anualizată.</p>}
               </div>
             </div>
           </div>
@@ -151,7 +152,7 @@ export function InvestmentStep() {
           <Card>
             <CardHeader icon={<Landmark size={18} />} title="S_Investiție" subtitle="0,5 × formular + 0,5 × comparație cu sectorul" />
             <div className="flex items-center gap-5">
-              <ScoreRing score={assessment.final.pillars.investment.score} size={132} stroke={12} />
+              <ScoreRing score={assessment.final.pillars.investment.score} size={132} stroke={7} />
               <div className="space-y-2 text-sm">
                 <p>
                   Formular: <strong>{ev.total}</strong>/100
@@ -169,10 +170,10 @@ export function InvestmentStep() {
               {ev.items.map((i) => (
                 <li key={i.id} className="flex items-start justify-between gap-3 text-xs">
                   <div>
-                    <p className="font-bold text-ink">{i.question}</p>
+                    <p className="font-semibold text-ink">{i.question}</p>
                     <p className="text-muted">{i.detail}</p>
                   </div>
-                  <span className={cx("shrink-0 font-bold", i.points === i.maxPoints ? "text-emerald-strong" : i.points === 0 ? "text-red" : "text-amber")}>
+                  <span className={cx("shrink-0 font-semibold", i.points === i.maxPoints ? "text-emerald-strong" : i.points === 0 ? "text-red" : "text-amber")}>
                     {i.points}/{i.maxPoints}
                   </span>
                 </li>
@@ -182,11 +183,13 @@ export function InvestmentStep() {
         </div>
       </div>
 
+      <LoanSimulator />
+
       <Card className="mt-5">
         <CardHeader
           icon={<Layers size={18} />}
-          title={`Firma ta vs. sectorul CAEN ${bench.sector.caenCode}`}
-          subtitle={`${bench.sector.label} · eșantion sintetic de ${bench.sector.companies} firme · scor ${num(bench.score)}/100 (cuartila cea mai bună = 100, mediana = 60, cuartila cea mai slabă = 25)`}
+          title={`Firma ta vs. sectorul ${bench.sector.shortLabel}`}
+          subtitle={`${assessment.sectorSource === "caen" ? `mapat din CAEN ${company.caenCode}` : assessment.sectorSource === "manual" ? "sector ales manual (fără CAEN)" : "implicit General IMM (fără CAEN)"} · ${bench.sector.label} · valori de referință orientative (nu statistici oficiale) · scor ${num(bench.score)}/100 (cuartila cea mai bună = 100, mediana = 60, cuartila cea mai slabă = 25)`}
         />
         <div className="divide-y divide-line">
           {bench.items.map((i) => (

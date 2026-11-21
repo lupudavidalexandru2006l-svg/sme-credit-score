@@ -3,17 +3,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   Company,
+  CourtCase,
   Dataset,
   InvestmentInput,
   Invoice,
   LegalCheckResult,
-  PortalSimulationScenario,
   QuizAnswers,
 } from "@/types/scoring";
 import { computeAssessment, type Assessment } from "@/lib/assessment";
-import { syntheticDataset } from "@/lib/data/synthetic";
+import { cleanPersonName, findExistingCompany, formatCui, newCompanyRecord } from "@/lib/company";
+import { cleanCaen, GENERAL_SECTOR, sectorForCaen } from "@/lib/data/benchmarks";
+import { caseKey, companyCounty, isPreIdentityLegal, rescoreLegal } from "@/lib/scoringEngine";
 import { parseEFacturaXml, type ParseResult } from "@/lib/efactura/parser";
 import { checkPortalJust } from "@/app/actions/checkPortalJust";
+import { scoreRealData, type MultiSourceVerificationReport } from "@/lib/multi-source-verifier";
+import { emptyRealData, withLegal, type CompanyRealData } from "@/lib/real-company-sources";
+import { DEFAULT_BILLING, DEFAULT_PLAN, isBillingCycle, isPlanTier, PLANS, splitUploadsByLimit, type BillingCycle, type PlanTier } from "@/lib/pricing";
 
 export const EMPTY_QUIZ: QuizAnswers = {
   revenueEstimate: null,
@@ -24,15 +29,8 @@ export const EMPTY_QUIZ: QuizAnswers = {
 };
 export const EMPTY_INVESTMENT: InvestmentInput = { purpose: null, ownContributionPct: null, requestedAmount: null };
 
-/** Realistic demo answers: a manager who knows the numbers well (but not perfectly). */
-export const DEMO_QUIZ: QuizAnswers = {
-  revenueEstimate: 2_000_000,
-  paymentTerm: "30",
-  topClientShare: "15-30",
-  mainSupplier: "Lactate Transilvania SRL",
-  hasSignificantCreditNotes: false,
-};
-export const DEMO_INVESTMENT: InvestmentInput = { purpose: "growth", ownContributionPct: 15, requestedAmount: 900_000 };
+/** Shown while no company exists yet: every step renders its empty state instead of another company's data. */
+export const BLANK_COMPANY: Company = newCompanyRecord({ id: "", name: "", cui: "", caenCode: "", ceoName: "", createdAt: "" });
 
 export type StepId = "onboarding" | "analiza" | "investitie" | "profil";
 
@@ -44,33 +42,123 @@ export interface ScoreToast {
   detail: string;
 }
 
-export type LegalMode = { kind: "live" } | { kind: "simulation"; scenario: PortalSimulationScenario };
-
-interface Persisted {
-  company?: Partial<Company>;
-  uploads?: Invoice[];
-  quiz?: QuizAnswers;
-  investment?: InvestmentInput;
-  legal?: LegalCheckResult | null;
-  visited?: StepId[];
+/** What the step-1 form submits. Name and CEO are required; CUI and CAEN are optional. */
+export interface CompanyDraft {
+  name: string;
+  cui: string;
+  caenCode: string;
+  /** Benchmark sector picked by hand (used when the CAEN code is missing or not mapped). */
+  sector: string;
+  ceoName: string;
+  county?: string;
+  /** GDPR: the administrator agreed to be searched by name in public court records. */
+  nameSearchConsent?: boolean;
 }
 
-const STORAGE_KEY = "credit-ready-v2";
+export interface SaveCompanyResult {
+  ok: boolean;
+  company?: Company;
+  created?: boolean;
+  message: string;
+}
 
-function readStorage(): Persisted {
+/** Everything that belongs to ONE company. Switching company swaps the whole workspace. */
+interface Workspace {
+  uploads: Invoice[];
+  quiz: QuizAnswers;
+  investment: InvestmentInput;
+  legal: LegalCheckResult | null;
+  /** Answers of the real official sources (ANAF, bilanț, VIES, ONRC); portal.just.ro lives in `legal`. */
+  official?: CompanyRealData | null;
+  visited: StepId[];
+  /** Documents of the credit file the user already has (checklist, step 4). */
+  docs?: Record<string, boolean>;
+  /** Action-plan items marked as done. */
+  doneActions?: string[];
+  /** Complete final scores over time (one point per day). */
+  history?: { date: string; score: number }[];
+}
+
+const EMPTY_WORKSPACE: Workspace = { uploads: [], quiz: EMPTY_QUIZ, investment: EMPTY_INVESTMENT, legal: null, official: null, visited: [] };
+
+interface PersistedV4 {
+  version: 4;
+  activeId: string;
+  companies: Company[];
+  workspaces: Record<string, Workspace>;
+}
+
+const STORAGE_KEY = "credit-ready-v4";
+const V3_KEY = "credit-ready-v3";
+/** The fictional demo company of earlier versions: removed from every saved list (zero invented data). */
+const LEGACY_DEMO_ID = "00000000-0000-4000-8000-000000004639";
+/** Plan per company: { [companyId]: { planTier, billingCycle } } (mirror of public.subscriptions). */
+const PLAN_KEY = "credit-ready-plan";
+
+export interface ActivePlan {
+  planTier: PlanTier;
+  billingCycle: BillingCycle;
+}
+const DEFAULT_ACTIVE_PLAN: ActivePlan = { planTier: DEFAULT_PLAN, billingCycle: DEFAULT_BILLING };
+
+function readPlans(): Record<string, ActivePlan> {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Persisted) : {};
+    const raw = JSON.parse(window.localStorage.getItem(PLAN_KEY) ?? "{}") as Record<string, Partial<ActivePlan>>;
+    return Object.fromEntries(
+      Object.entries(raw ?? {})
+        .filter(([, v]) => isPlanTier(v?.planTier))
+        .map(([id, v]) => [id, { planTier: v.planTier as PlanTier, billingCycle: isBillingCycle(v.billingCycle) ? v.billingCycle : DEFAULT_BILLING }]),
+    );
   } catch {
     return {};
   }
 }
+/** A portal.just.ro result that is not a real answer (old simulations, results saved before identity confidence). */
+const staleLegal = (l: LegalCheckResult | null | undefined) => !l || isPreIdentityLegal(l) || (l.source as string) === "simulation";
+
+/**
+ * v4 = v3 without invented data: the demo company is removed, generated fixed costs / installments are
+ * reset (to be declared), simulated court results and old 6-source reports (with simulated sources) dropped.
+ * Real XML uploads, quiz answers and the investment form are kept.
+ */
+function readStorage(): PersistedV4 | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as PersistedV4;
+      if (p.version === 4 && Array.isArray(p.companies)) return p;
+    }
+    const v3raw = window.localStorage.getItem(V3_KEY);
+    if (!v3raw) return null;
+    const v3 = JSON.parse(v3raw) as { activeId: string; companies: Company[]; workspaces: Record<string, Workspace & { verification?: unknown }> };
+    const companies = (v3.companies ?? [])
+      .filter((c) => c.id !== LEGACY_DEMO_ID)
+      .map((c) => (c.financialsDeclared ? c : { ...c, monthlyFixedCosts: 0, existingMonthlyDebtService: 0, financialsDeclared: false, debts: c.debts ?? [] }));
+    const workspaces: Record<string, Workspace> = {};
+    for (const [id, w] of Object.entries(v3.workspaces ?? {})) {
+      if (id === LEGACY_DEMO_ID || !w) continue;
+      const rest: Workspace = { ...EMPTY_WORKSPACE, ...w };
+      delete (rest as Workspace & { verification?: unknown }).verification;
+      workspaces[id] = { ...rest, legal: staleLegal(rest.legal) ? null : rest.legal, official: null };
+    }
+    return { version: 4, activeId: companies.some((c) => c.id === v3.activeId) ? v3.activeId : (companies[0]?.id ?? ""), companies, workspaces };
+  } catch {
+    return null;
+  }
+}
+
+type SupabaseInfo = { configured: boolean; error?: string } | null;
 
 interface Ctx {
+  /** The active company (all scores are computed on its invoices only). */
   company: Company;
+  companies: Company[];
+  activeCompanyId: string;
+  switchCompany: (id: string) => void;
+  saveCompany: (draft: CompanyDraft) => Promise<SaveCompanyResult>;
   setCompany: (patch: Partial<Company>) => void;
   dataset: Dataset;
-  supabase: { configured: boolean; error?: string } | null;
+  supabase: SupabaseInfo;
   invoices: Invoice[];
   uploads: Invoice[];
   quiz: QuizAnswers;
@@ -79,19 +167,42 @@ interface Ctx {
   setInvestment: (patch: Partial<InvestmentInput>) => void;
   legal: LegalCheckResult | null;
   legalLoading: boolean;
-  runLegalCheck: (mode?: LegalMode) => Promise<void>;
+  /** Re-runs portal.just.ro for the active company (official ANAF name when known). */
+  runLegalCheck: () => Promise<void>;
+  /** Raw answers of the real sources for the active company. */
+  official: CompanyRealData;
+  /** ScorVerificariExterne report from `official` + the current legal result (with the user's confirmations). */
+  verification: MultiSourceVerificationReport;
+  verificationLoading: boolean;
+  /** Queries ANAF, bilanț, VIES again (then portal.just.ro). */
+  runMultiSourceCheck: () => Promise<void>;
+  /** Unsaved step-1 form (saved automatically when the user continues to step 2). */
+  pendingDraft: CompanyDraft | null;
+  setPendingDraft: (d: CompanyDraft | null) => void;
+  docs: Record<string, boolean>;
+  toggleDoc: (id: string) => void;
+  doneActions: string[];
+  toggleAction: (id: string) => void;
+  history: { date: string; score: number }[];
+  setCaseVerdict: (key: string, verdict: CourtCase["userVerdict"] | null) => void;
   assessment: Assessment;
   uploadXml: (files: { name: string; xml: string }[]) => Promise<ParseResult[]>;
   lastUploadResults: ParseResult[];
   persistMessage: string | null;
   resetUploads: () => void;
-  loadDemo: () => void;
   resetAll: () => void;
   toast: ScoreToast | null;
   dismissToast: () => void;
   visited: StepId[];
   markVisited: (s: StepId) => void;
   hydrated: boolean;
+  /** Plan of the ACTIVE company (Starter until upgraded); gates features instantly, no reload. */
+  plan: ActivePlan;
+  setPlan: (planTier: PlanTier, billingCycle?: BillingCycle) => void;
+  /** Reason shown in the upgrade prompt (e.g. the 4th XML on Starter); null = closed. */
+  upgradePrompt: string | null;
+  showUpgrade: (reason: string) => void;
+  closeUpgrade: () => void;
 }
 
 const AssessmentContext = createContext<Ctx | null>(null);
@@ -107,77 +218,161 @@ const mergeInvoices = (base: Invoice[], uploads: Invoice[]) => {
   return [...base.filter((i) => !ids.has(i.id)), ...uploads];
 };
 
+const newId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
 export function AssessmentProvider({ children }: { children: ReactNode }) {
-  const [dataset, setDataset] = useState<Dataset>(() => syntheticDataset());
-  const [supabase, setSupabase] = useState<Ctx["supabase"]>(null);
-  const [company, setCompanyState] = useState<Company>(() => syntheticDataset().company);
-  const [uploads, setUploads] = useState<Invoice[]>([]);
-  const [quiz, setQuizState] = useState<QuizAnswers>(EMPTY_QUIZ);
-  const [investment, setInvestmentState] = useState<InvestmentInput>(EMPTY_INVESTMENT);
-  const [legal, setLegal] = useState<LegalCheckResult | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
+  const [workspaces, setWorkspaces] = useState<Record<string, Workspace>>({});
+  /** Invoices stored in Supabase per company id; null = company not in Supabase (only its uploaded XML counts). */
+  const [remote, setRemote] = useState<Record<string, Invoice[] | null>>({});
+  const [supabase, setSupabase] = useState<SupabaseInfo>(null);
   const [legalLoading, setLegalLoading] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<CompanyDraft | null>(null);
   const [toast, setToast] = useState<ScoreToast | null>(null);
   const [lastUploadResults, setLastUploadResults] = useState<ParseResult[]>([]);
   const [persistMessage, setPersistMessage] = useState<string | null>(null);
-  const [visited, setVisited] = useState<StepId[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const autoChecked = useRef(false);
+  const [plans, setPlans] = useState<Record<string, ActivePlan>>({});
+  const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
+  const autoChecked = useRef(new Set<string>());
 
-  const invoices = useMemo(() => mergeInvoices(dataset.invoices, uploads), [dataset.invoices, uploads]);
-  const assessment = useMemo(
-    () => computeAssessment({ company, invoices, quiz, investment, legal }),
-    [company, invoices, quiz, investment, legal],
+  const company = useMemo(() => companies.find((c) => c.id === activeId) ?? companies[0] ?? BLANK_COMPANY, [companies, activeId]);
+  const ws = workspaces[company.id] ?? EMPTY_WORKSPACE;
+  const { uploads, quiz, investment, legal, visited } = ws;
+  // The real sources of the ACTIVE company only; the portal.just.ro parts follow the current legal result.
+  const official = useMemo(() => withLegal(ws.official ?? emptyRealData(company.cui), legal), [ws.official, company.cui, legal]);
+  const verification = useMemo(
+    () => scoreRealData(official, legal, { companyId: company.id, companyName: company.officialName || company.name, ceoName: company.ceoName }),
+    [official, legal, company.id, company.officialName, company.name, company.ceoName],
   );
+  const docs = useMemo(() => ws.docs ?? {}, [ws.docs]);
+  const doneActions = useMemo(() => ws.doneActions ?? [], [ws.doneActions]);
+  const history = useMemo(() => ws.history ?? [], [ws.history]);
+  const supabaseLive = Boolean(supabase?.configured && !supabase.error);
+  const plan = plans[company.id] ?? DEFAULT_ACTIVE_PLAN;
 
-  // --- Restore local state, then load the dataset (Supabase or synthetic) ----------
+  const remoteInvoices = remote[company.id];
+  const dataset: Dataset = useMemo(
+    () => (remoteInvoices?.length ? { source: "supabase", company, invoices: remoteInvoices } : { source: "local", company, invoices: [] }),
+    [company, remoteInvoices],
+  );
+  // Only the ACTIVE company's invoices: those stored in Supabase + the XML uploaded for it. Nothing generated.
+  const invoices = useMemo(() => mergeInvoices(dataset.invoices, uploads), [dataset.invoices, uploads]);
+  const assessment = useMemo(() => computeAssessment({ company, invoices, quiz, investment, legal, verification }), [company, invoices, quiz, investment, legal, verification]);
+
+  const updateWorkspace = useCallback((id: string, fn: (w: Workspace) => Workspace) => {
+    setWorkspaces((all) => ({ ...all, [id]: fn(all[id] ?? EMPTY_WORKSPACE) }));
+  }, []);
+
+  // --- Restore local state, then sync the company list with Supabase -------------------
   useEffect(() => {
     const saved = readStorage();
     /* eslint-disable react-hooks/set-state-in-effect -- one-time restore from localStorage after hydration */
-    if (saved.company) setCompanyState((c) => ({ ...c, ...saved.company }));
-    if (saved.uploads) setUploads(saved.uploads);
-    if (saved.quiz) setQuizState(saved.quiz);
-    if (saved.investment) setInvestmentState(saved.investment);
-    if (saved.legal) setLegal(saved.legal);
-    if (saved.visited) setVisited(saved.visited);
+    if (saved) {
+      setCompanies(saved.companies);
+      setWorkspaces(saved.workspaces ?? {});
+      setActiveId(saved.companies.some((c) => c.id === saved.activeId) ? saved.activeId : (saved.companies[0]?.id ?? ""));
+    }
+    setPlans(readPlans());
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
 
-    const cui = saved.company?.cui ?? syntheticDataset().company.cui;
-    fetch(`/api/dataset?cui=${encodeURIComponent(cui)}`)
+    fetch("/api/companies")
       .then((r) => r.json())
-      .then((d: Dataset & { supabase: { configured: boolean; error?: string } }) => {
+      .then((d: { supabase: { configured: boolean; error?: string }; companies: Company[] }) => {
         setSupabase(d.supabase);
-        if (d.source === "supabase") {
-          setDataset({ source: d.source, company: d.company, invoices: d.invoices });
-          // Saved form edits (name, CUI, CAEN, CEO) win over the stored record.
-          setCompanyState({ ...d.company, ...saved.company });
-        }
+        if (!d.supabase.configured || d.supabase.error || !d.companies.length) return;
+        // Supabase is the source of truth for saved companies; companies only known locally are kept.
+        setCompanies((local) => {
+          const byId = new Map(local.map((c) => [c.id, c]));
+          for (const c of d.companies) if (c.id !== LEGACY_DEMO_ID) byId.set(c.id, { ...byId.get(c.id), ...c });
+          return [...byId.values()];
+        });
+        setActiveId((id) => id || (d.companies.find((c) => c.id !== LEGACY_DEMO_ID)?.id ?? ""));
       })
       .catch(() => setSupabase({ configured: false, error: "API indisponibil" }));
   }, []);
 
+  // --- Load the active company's invoices from Supabase (filtered by company_id) --------
+  useEffect(() => {
+    if (!supabaseLive || !activeId || remote[activeId] !== undefined) return;
+    let cancelled = false;
+    fetch(`/api/dataset?companyId=${encodeURIComponent(activeId)}`)
+      .then((r) => r.json())
+      .then((d: Dataset & { found: boolean }) => {
+        if (cancelled) return;
+        setRemote((all) => ({ ...all, [activeId]: d.found && d.source === "supabase" ? d.invoices : null }));
+      })
+      .catch(() => !cancelled && setRemote((all) => ({ ...all, [activeId]: null })));
+    return () => {
+      cancelled = true;
+    };
+  }, [supabaseLive, activeId, remote]);
+
   useEffect(() => {
     if (!hydrated) return;
     try {
-      const data: Persisted = {
-        company: { name: company.name, cui: company.cui, caenCode: company.caenCode, ceoName: company.ceoName },
-        uploads,
-        quiz,
-        investment,
-        legal,
-        visited,
-      };
+      const data: PersistedV4 = { version: 4, activeId, companies, workspaces };
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
-      /* storage unavailable: state simply is not remembered */
+      /* storage unavailable or full: state simply is not remembered */
     }
-  }, [hydrated, company, uploads, quiz, investment, legal, visited]);
+  }, [hydrated, activeId, companies, workspaces]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(PLAN_KEY, JSON.stringify(plans));
+    } catch {
+      /* storage unavailable: the plan lasts for this session only */
+    }
+  }, [hydrated, plans]);
+
+  // Plan stored in Supabase for a company this browser has no plan for yet.
+  useEffect(() => {
+    if (!hydrated || !supabaseLive || !activeId || plans[activeId]) return;
+    let cancelled = false;
+    fetch(`/api/subscription?companyId=${encodeURIComponent(activeId)}`)
+      .then((r) => r.json())
+      .then((d: { ok: boolean; subscription?: { planTier: unknown; billingCycle: unknown } }) => {
+        const sub = d.subscription;
+        if (cancelled || !d.ok || !sub || !isPlanTier(sub.planTier) || sub.planTier === DEFAULT_PLAN) return;
+        setPlans((all) => (all[activeId] ? all : { ...all, [activeId]: { planTier: sub.planTier as PlanTier, billingCycle: isBillingCycle(sub.billingCycle) ? sub.billingCycle : DEFAULT_BILLING } }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, supabaseLive, activeId, plans]);
+
+  const setPlan = useCallback(
+    (planTier: PlanTier, billingCycle?: BillingCycle) => {
+      const next = { planTier, billingCycle: billingCycle ?? plan.billingCycle };
+      setPlans((all) => ({ ...all, [company.id]: next }));
+      setUpgradePrompt(null);
+      void fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, ...next }) }).catch(() => undefined);
+    },
+    [company, plan.billingCycle],
+  );
+  const showUpgrade = useCallback((reason: string) => setUpgradePrompt(reason), []);
+  const closeUpgrade = useCallback(() => setUpgradePrompt(null), []);
 
   // --- Mutators -----------------------------------------------------------------------
-  const setCompany = useCallback((patch: Partial<Company>) => setCompanyState((c) => ({ ...c, ...patch })), []);
-  const setQuiz = useCallback((patch: Partial<QuizAnswers>) => setQuizState((q) => ({ ...q, ...patch })), []);
-  const setInvestment = useCallback((patch: Partial<InvestmentInput>) => setInvestmentState((i) => ({ ...i, ...patch })), []);
-  const markVisited = useCallback((s: StepId) => setVisited((v) => (v.includes(s) ? v : [...v, s])), []);
+  const setCompany = useCallback(
+    (patch: Partial<Company>) => setCompanies((list) => list.map((c) => (c.id === activeId ? { ...c, ...patch, id: c.id } : c))),
+    [activeId],
+  );
+  const setQuiz = useCallback((patch: Partial<QuizAnswers>) => updateWorkspace(activeId, (w) => ({ ...w, quiz: { ...w.quiz, ...patch } })), [activeId, updateWorkspace]);
+  const setInvestment = useCallback(
+    (patch: Partial<InvestmentInput>) => updateWorkspace(activeId, (w) => ({ ...w, investment: { ...w.investment, ...patch } })),
+    [activeId, updateWorkspace],
+  );
+  const markVisited = useCallback(
+    (s: StepId) => updateWorkspace(activeId, (w) => (w.visited.includes(s) ? w : { ...w, visited: [...w.visited, s] })),
+    [activeId, updateWorkspace],
+  );
   const dismissToast = useCallback(() => setToast(null), []);
 
   const showToast = useCallback((from: number, to: number, title: string, detail: string) => {
@@ -186,97 +381,291 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setToast((t) => (t?.id === id ? null : t)), 9000);
   }, []);
 
-  const runLegalCheck = useCallback(
-    async (mode: LegalMode = { kind: "live" }) => {
+  const switchCompany = useCallback((id: string) => {
+    setActiveId(id);
+    setLastUploadResults([]);
+    setPersistMessage(null);
+    setToast(null);
+  }, []);
+
+  /**
+   * Step 1 submit: load the existing company (same CUI, or same normalized name when there is no CUI)
+   * or create a new one with a 12-month synthetic e-Factura history. Never deletes anything.
+   */
+  const saveCompany = useCallback(
+    async (draft: CompanyDraft): Promise<SaveCompanyResult> => {
+      const name = draft.name.trim().replace(/\s+/g, " ");
+      const ceoName = cleanPersonName(draft.ceoName);
+      if (!name || !ceoName) return { ok: false, message: "Completează numele firmei și numele administratorului (obligatorii)." };
+      const caenCode = cleanCaen(draft.caenCode);
+      const sector = sectorForCaen(caenCode) ?? (draft.sector || GENERAL_SECTOR);
+      const cui = formatCui(draft.cui);
+
+      const activate = (c: Company, created: boolean, extra = "") => {
+        setCompanies((list) => (list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? { ...x, ...c } : x)) : [...list, c]));
+        switchCompany(c.id);
+        const id = cui ? `CUI ${cui}` : "fără CUI, identificată după nume";
+        setPendingDraft(null);
+        // Consent changes and identity changes need fresh checks.
+        autoChecked.current.delete(c.id);
+        return {
+          ok: true,
+          company: c,
+          created,
+          message: created
+            ? `Firmă nouă salvată (${id}). ${cui ? "Aduc datele oficiale de la ANAF, bilanțurile, VIES și portal.just.ro." : "Fără CUI: verific doar portal.just.ro; completează CUI-ul pentru ANAF, bilanț și VIES."} Pentru scor încarcă facturile e-Factura (XML) în Pasul 2.${extra}`
+            : `Firma există deja (${id}) — am încărcat datele ei, nimic nu a fost șters.${extra}`,
+        };
+      };
+
+      if (supabaseLive) {
+        try {
+          const r = await fetch("/api/companies", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent }),
+          }).then((x) => x.json() as Promise<{ ok: boolean; company?: Company; created?: boolean; seeded?: number; error?: string }>);
+          if (r.ok && r.company) {
+            setRemote((all) => {
+              const next = { ...all };
+              delete next[r.company!.id]; // force a fresh load of its invoices
+              return next;
+            });
+            return activate({ ...r.company, nameSearchConsent: draft.nameSearchConsent ?? r.company.nameSearchConsent }, Boolean(r.created), " Salvat în Supabase.");
+          }
+          // Supabase failed: fall through to local mode so the form never blocks.
+          const local = saveLocal();
+          return { ...local, message: `${local.message} (Supabase: ${r.error ?? "eroare"}; salvat local.)` };
+        } catch {
+          const local = saveLocal();
+          return { ...local, message: `${local.message} (API indisponibil; salvat local.)` };
+        }
+      }
+      return saveLocal();
+
+      function saveLocal(): SaveCompanyResult {
+        const existing = findExistingCompany(companies, { name, cui });
+        if (existing) {
+          // An untouched "General IMM" default from the blank form must not overwrite a sector chosen earlier.
+          const keptSector = sectorForCaen(caenCode) ?? (sector !== GENERAL_SECTOR ? sector : (existing.sector ?? sector));
+          return activate(
+            {
+              ...existing,
+              cui: cui || existing.cui,
+              caenCode: caenCode || existing.caenCode,
+              sector: keptSector,
+              ceoName,
+              county: draft.county ?? existing.county,
+              nameSearchConsent: draft.nameSearchConsent ?? existing.nameSearchConsent,
+            },
+            false,
+          );
+        }
+        return activate(newCompanyRecord({ id: newId(), name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent }), true);
+      }
+    },
+    [companies, supabaseLive, switchCompany],
+  );
+
+  /** portal.just.ro for one company: the official ANAF name when known; the administrator only with consent (GDPR). */
+  const runLegalCheckFor = useCallback(
+    async (target: Company) => {
       setLegalLoading(true);
       try {
         const res = await checkPortalJust({
-          companyName: company.name,
-          ceoName: company.ceoName,
-          simulationMode: mode.kind === "simulation",
-          simulationScenario: mode.kind === "simulation" ? mode.scenario : undefined,
+          companyName: target.officialName || target.name,
+          ceoName: target.nameSearchConsent ? target.ceoName : "",
+          companyCounty: companyCounty(target),
         });
-        setLegal(res);
+        // Keep the user's confirmations for cases that come back again.
+        updateWorkspace(target.id, (w) => {
+          const verdicts = new Map(w.legal?.cases.filter((c) => c.userVerdict).map((c) => [caseKey(c), c.userVerdict]));
+          const legalResult =
+            verdicts.size === 0 ? res : rescoreLegal({ ...res, cases: res.cases.map((c) => ({ ...c, userVerdict: verdicts.get(caseKey(c)) ?? c.userVerdict })) });
+          return { ...w, legal: legalResult };
+        });
+        if (supabaseLive && !res.isFallback) {
+          void fetch("/api/legal-checks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: target, result: res }) }).catch(
+            () => undefined,
+          );
+        }
       } finally {
         setLegalLoading(false);
       }
     },
-    [company.name, company.ceoName],
+    [supabaseLive, updateWorkspace],
   );
 
-  // Automatic portal.just.ro check on first visit (live, with fallback inside the server action).
+  /**
+   * The real official data of one company (ANAF v9, bilanțuri, VIES, ONRC state) via /api/company-real-data,
+   * then portal.just.ro with the OFFICIAL name. Empty fields of the company (CAEN, county) are completed from ANAF.
+   */
+  const refreshCompanyData = useCallback(
+    async (target: Company) => {
+      if (!target.id) return;
+      autoChecked.current.add(target.id);
+      let next = target;
+      if (formatCui(target.cui)) {
+        setVerificationLoading(true);
+        try {
+          const r = (await fetch("/api/company-real-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cui: target.cui, companyName: target.name, ceoName: target.ceoName, companyCounty: companyCounty(target), includePortal: false }),
+          }).then((x) => x.json())) as { ok: boolean; real?: CompanyRealData };
+          if (r.ok && r.real) {
+            const real = r.real;
+            updateWorkspace(target.id, (w) => ({ ...w, official: real }));
+            const a = real.anaf;
+            if (a) {
+              const caen = target.caenCode || cleanCaen(a.codCaen);
+              next = {
+                ...target,
+                officialName: a.denumire || undefined,
+                caenCode: caen,
+                sector: target.caenCode ? target.sector : (sectorForCaen(caen) ?? target.sector),
+                county: target.county ?? (a.judet || undefined),
+                city: target.city || a.localitate,
+              };
+              const patch = next;
+              setCompanies((list) => list.map((c) => (c.id === patch.id ? { ...c, ...patch } : c)));
+            }
+          }
+        } catch {
+          /* API unavailable: the sources stay "unavailable", nothing is assumed */
+        } finally {
+          setVerificationLoading(false);
+        }
+      } else {
+        updateWorkspace(target.id, (w) => ({ ...w, official: null }));
+      }
+      await runLegalCheckFor(next);
+    },
+    [runLegalCheckFor, updateWorkspace],
+  );
+
+  const runLegalCheck = useCallback(() => runLegalCheckFor(company), [company, runLegalCheckFor]);
+  const runMultiSourceCheck = useCallback(() => refreshCompanyData(company), [company, refreshCompanyData]);
+
+  /** "confirmat" = it is my case, "contestat" = a namesake, null = undo. */
+  const setCaseVerdict = useCallback(
+    (key: string, verdict: CourtCase["userVerdict"] | null) => {
+      updateWorkspace(activeId, (w) =>
+        w.legal ? { ...w, legal: rescoreLegal({ ...w.legal, cases: w.legal.cases.map((c) => (caseKey(c) === key ? { ...c, userVerdict: verdict ?? undefined } : c)) }) } : w,
+      );
+    },
+    [activeId, updateWorkspace],
+  );
+
+  const toggleDoc = useCallback((id: string) => updateWorkspace(activeId, (w) => ({ ...w, docs: { ...w.docs, [id]: !w.docs?.[id] } })), [activeId, updateWorkspace]);
+  const toggleAction = useCallback(
+    (id: string) =>
+      updateWorkspace(activeId, (w) => {
+        const done = w.doneActions ?? [];
+        return { ...w, doneActions: done.includes(id) ? done.filter((x) => x !== id) : [...done, id] };
+      }),
+    [activeId, updateWorkspace],
+  );
+
+  // Real data + portal.just.ro the first time each company is opened in this session (and after each save).
   useEffect(() => {
-    if (!hydrated || autoChecked.current || legal) return;
-    autoChecked.current = true;
-    void runLegalCheck({ kind: "live" });
-  }, [hydrated, legal, runLegalCheck]);
+    if (!hydrated || !company.id || autoChecked.current.has(company.id) || !company.name.trim()) return;
+    if (legal && ws.official) {
+      autoChecked.current.add(company.id);
+      return;
+    }
+    void refreshCompanyData(company);
+  }, [hydrated, company, legal, ws.official, refreshCompanyData]);
+
+  // Score history: one point per day, only for complete scores (never for scores on missing data).
+  const finalComplete = Boolean(assessment.final.complete);
+  const finalScoreNow = assessment.final.finalScore;
+  useEffect(() => {
+    if (!hydrated || !company.id || !finalComplete) return;
+    const date = new Date().toISOString().slice(0, 10);
+    updateWorkspace(company.id, (w) => {
+      const h = w.history ?? [];
+      const last = h[h.length - 1];
+      if (last?.date === date && last.score === finalScoreNow) return w;
+      return { ...w, history: [...h.filter((p) => p.date !== date), { date, score: finalScoreNow }].slice(-60) };
+    });
+  }, [hydrated, company.id, finalComplete, finalScoreNow, updateWorkspace]);
 
   const uploadXml = useCallback(
     async (files: { name: string; xml: string }[]) => {
-      const results = files.map((f) => parseEFacturaXml(f.xml, f.name, company));
+      const target = company;
+      const results = files.map((f) => parseEFacturaXml(f.xml, f.name, target));
       setLastUploadResults(results);
+      const valid = results.filter((r) => r.ok && r.invoice);
+      // Plan limit on XML uploads per company (re-uploading an invoice already counted is free).
+      const known = new Set(uploads.map((u) => u.id));
+      const fresh = valid.filter((r) => !known.has(r.invoice!.id));
+      const { rejected } = splitUploadsByLimit(plan.planTier, uploads.length, fresh);
+      if (rejected.length > 0) {
+        const limit = PLANS[plan.planTier].limits.maxXmlUploads;
+        const msg = `Limita planului ${PLANS[plan.planTier].name}: maximum ${limit} facturi XML pe firmă. Deblochează upload nelimitat cu Planul Pro.`;
+        for (const r of rejected) Object.assign(r, { ok: false, error: msg, invoice: undefined });
+        setLastUploadResults([...results]);
+        setUpgradePrompt(`Ai atins limita de ${limit} facturi XML a planului Starter pentru ${target.name}. Cu Planul Pro încarci nelimitat și scorul se recalculează la fiecare factură.`);
+      }
       const parsed = results.filter((r) => r.ok && r.invoice).map((r) => r.invoice!);
       if (parsed.length === 0) return results;
 
       const nextUploads = mergeInvoices(uploads, parsed);
       const before = assessment.final.finalScore;
-      const after = computeAssessment({ company, invoices: mergeInvoices(dataset.invoices, nextUploads), quiz, investment, legal }).final.finalScore;
-      setUploads(nextUploads);
+      const after = computeAssessment({ company: target, invoices: mergeInvoices(dataset.invoices, nextUploads), quiz, investment, legal, verification }).final.finalScore;
+      updateWorkspace(target.id, (w) => ({ ...w, uploads: mergeInvoices(w.uploads, parsed) }));
       const first = parsed[0];
       showToast(
         before,
         after,
-        parsed.length === 1 ? `Factura ${first.number} procesată` : `${parsed.length} facturi procesate`,
+        parsed.length === 1 ? `Factura ${first.number} → ${target.name}` : `${parsed.length} facturi atașate la ${target.name}`,
         parsed.length === 1
-          ? `${first.typeCode === "381" ? "Storno 381" : "Factură 380"} · ${first.direction === "issued" ? first.customerName : first.supplierName} · ${first.taxExclusiveAmount.toLocaleString("ro-RO")} RON fără TVA`
-          : "Toți pilonii au fost recalculați.",
+          ? `${first.typeCode === "381" ? "Storno 381" : "Factură 380"} ${first.direction === "issued" ? "emisă (vânzare)" : "primită (achiziție)"} · ${first.direction === "issued" ? first.customerName : first.supplierName} · ${first.taxExclusiveAmount.toLocaleString("ro-RO")} RON fără TVA`
+          : "Toți pilonii au fost recalculați doar pe facturile acestei firme.",
       );
 
       const rawXml = Object.fromEntries(results.filter((r) => r.ok && r.invoice).map((r) => [r.invoice!.id, files.find((f) => f.name === r.fileName)?.xml ?? ""]));
       fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyCui: company.cui, invoices: parsed, rawXml }),
+        body: JSON.stringify({ company: target, invoices: parsed, rawXml }),
       })
         .then((r) => r.json())
         .then((r: { persisted: boolean; count?: number; message?: string; error?: string }) =>
-          setPersistMessage(r.persisted ? `Salvat în Supabase (${r.count} facturi).` : (r.error ?? r.message ?? "Nesalvat în Supabase.")),
+          setPersistMessage(r.persisted ? `Salvat în Supabase pe firma ${target.name} (${r.count} facturi).` : (r.error ?? r.message ?? "Nesalvat în Supabase.")),
         )
-        .catch(() => setPersistMessage("Nesalvat: API indisponibil."));
+        .catch(() => setPersistMessage("Nesalvat: API indisponibil (facturile rămân în browser, pe firma activă)."));
       return results;
     },
-    [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, uploads],
+    [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads, verification, plan.planTier],
   );
 
   const resetUploads = useCallback(() => {
     if (uploads.length === 0) return;
     const before = assessment.final.finalScore;
-    const after = computeAssessment({ company, invoices: dataset.invoices, quiz, investment, legal }).final.finalScore;
-    setUploads([]);
+    const after = computeAssessment({ company, invoices: dataset.invoices.filter((i) => i.source !== "xml-upload"), quiz, investment, legal, verification }).final.finalScore;
+    updateWorkspace(company.id, (w) => ({ ...w, uploads: [] }));
+    setRemote((all) => (all[company.id] ? { ...all, [company.id]: all[company.id]!.filter((i) => i.source !== "xml-upload") } : all));
     setLastUploadResults([]);
     setPersistMessage(null);
-    showToast(before, after, "Facturi încărcate eliminate", "S-a revenit la istoricul de 12 luni.");
-    void fetch(`/api/invoices?cui=${encodeURIComponent(company.cui)}`, { method: "DELETE" }).catch(() => undefined);
-  }, [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, uploads.length]);
+    showToast(before, after, "Facturi încărcate eliminate", `Doar pentru ${company.name}; celelalte firme rămân neatinse.`);
+    void fetch(`/api/invoices?companyId=${encodeURIComponent(company.id)}`, { method: "DELETE" }).catch(() => undefined);
+  }, [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads.length, verification]);
 
-  const loadDemo = useCallback(() => {
-    setQuizState(DEMO_QUIZ);
-    setInvestmentState(DEMO_INVESTMENT);
-  }, []);
-
+  /** Resets the evaluation of the ACTIVE company (answers, uploads, legal check). Companies are never deleted. */
   const resetAll = useCallback(() => {
-    setQuizState(EMPTY_QUIZ);
-    setInvestmentState(EMPTY_INVESTMENT);
-    setUploads([]);
+    updateWorkspace(company.id, () => EMPTY_WORKSPACE);
     setLastUploadResults([]);
-    setVisited([]);
-    setCompanyState(dataset.company);
-    setLegal(null);
-    autoChecked.current = false;
-  }, [dataset.company]);
+    autoChecked.current.delete(company.id);
+  }, [company.id, updateWorkspace]);
 
   const value: Ctx = {
     company,
+    companies,
+    activeCompanyId: company.id,
+    switchCompany,
+    saveCompany,
     setCompany,
     dataset,
     supabase,
@@ -289,18 +678,34 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     legal,
     legalLoading,
     runLegalCheck,
+    official,
+    verification,
+    verificationLoading,
+    runMultiSourceCheck,
+    pendingDraft,
+    setPendingDraft,
+    docs,
+    toggleDoc,
+    doneActions,
+    toggleAction,
+    history,
+    setCaseVerdict,
     assessment,
     uploadXml,
     lastUploadResults,
     persistMessage,
     resetUploads,
-    loadDemo,
     resetAll,
     toast,
     dismissToast,
     visited,
     markVisited,
     hydrated,
+    plan,
+    setPlan,
+    upgradePrompt,
+    showUpgrade,
+    closeUpgrade,
   };
 
   return <AssessmentContext.Provider value={value}>{children}</AssessmentContext.Provider>;

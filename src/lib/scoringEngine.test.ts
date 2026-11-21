@@ -3,7 +3,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   analyzeCase,
+  assessIdentity,
   calculateFinalScore,
+  companyCounty,
+  countyOf,
+  courtCounties,
+  isPreIdentityLegal,
+  needsConfirmation,
+  scoreLegalImpact,
   classifyCaseKind,
   classifyPartyRole,
   partyNameExact,
@@ -126,6 +133,58 @@ test("exact full-name matching (portal returns any-word matches)", () => {
   assert.equal(partyNameExact("SC ALFA COM SRL prin lichidator BETA IPURL", "Alfa Com", "firma"), true);
   assert.equal(partyNameExact("SC ALFA COM IMPEX SRL", "Alfa Com", "firma"), false);
   assert.equal(partyNameExact("ANY", ""), false);
+});
+
+test("court location: county and appeal regions", () => {
+  assert.equal(countyOf("Judecatoria CLUJNAPOCA"), "Cluj");
+  assert.equal(countyOf("Tribunalul BRASOV"), "Brașov");
+  assert.equal(countyOf("Judecatoria SECTORUL3 BUCURESTI"), "București");
+  assert.equal(countyOf("Judecatoria TARGUMURES"), "Mureș");
+  assert.equal(countyOf("Judecatoria CURTEADEARGES"), "Argeș");
+  assert.equal(countyOf("Judecatoria FAGARAS"), ""); // not a county seat: unknown, not "other county"
+  assert.deepEqual(courtCounties("Curtea de Apel BRASOV"), ["Brașov", "Covasna"]);
+  assert.deepEqual(courtCounties("Inalta Curte de Casatie si Justitie"), []);
+  assert.equal(companyCounty({ city: "Brașov" }), "Brașov");
+  assert.equal(companyCounty({ city: "Brașov", county: "" }), ""); // explicitly unknown
+});
+
+test("identity confidence without CNP", () => {
+  const base = { partyNames: ["POPESCU ION", "SC ALTA FIRMA SRL"], companyName: "Alfa Com SRL", companyCounty: "Brașov" };
+  assert.equal(assessIdentity({ ...base, matchedBy: "firma", institutie: "Tribunalul CLUJ" }).confidence, "ridicata");
+  assert.equal(
+    assessIdentity({ ...base, matchedBy: "administrator", partyNames: ["POPESCU ION", "S.C. ALFA COM S.R.L."], institutie: "Tribunalul CLUJ" }).confidence,
+    "ridicata",
+  ); // firm in the same case
+  assert.equal(assessIdentity({ ...base, matchedBy: "administrator", institutie: "Judecatoria BRASOV" }).confidence, "medie");
+  assert.equal(assessIdentity({ ...base, matchedBy: "administrator", institutie: "Curtea de Apel BRASOV" }).confidence, "medie");
+  assert.equal(assessIdentity({ ...base, matchedBy: "administrator", institutie: "Judecatoria FAGARAS" }).confidence, "medie"); // unknown place
+  assert.equal(assessIdentity({ ...base, matchedBy: "administrator", institutie: "Judecatoria CONSTANTA" }).confidence, "scazuta");
+  assert.equal(assessIdentity({ ...base, companyCounty: "", matchedBy: "administrator", institutie: "Judecatoria CONSTANTA" }).confidence, "medie");
+});
+
+test("legal impact weighted by identity confidence and user answer", () => {
+  const crit = { severity: 4 as const, deduction: 100 };
+  assert.equal(scoreLegalImpact([{ ...crit, confidence: "ridicata" }]).integrityKillSwitch, true);
+  assert.equal(scoreLegalImpact([crit]).integrityKillSwitch, true); // old saved results: full weight
+  const probable = scoreLegalImpact([{ ...crit, confidence: "medie" }]);
+  assert.equal(probable.integrityKillSwitch, false); // no kill-switch until confirmed
+  assert.equal(probable.legalScore, 80); // counts as "grav" (-20)
+  assert.equal(scoreLegalImpact([{ ...crit, confidence: "medie", userVerdict: "confirmat" }]).legalScore, 0);
+  assert.equal(scoreLegalImpact([{ ...crit, confidence: "scazuta" }]).legalScore, 100);
+  assert.equal(scoreLegalImpact([{ ...crit, confidence: "ridicata", userVerdict: "contestat" }]).legalScore, 100);
+  assert.equal(scoreLegalImpact([{ severity: 2, deduction: 8, confidence: "medie" }]).legalScore, 96); // half
+  assert.equal(needsConfirmation({ severity: 2, deduction: 8, confidence: "medie" }), true);
+  assert.equal(needsConfirmation({ severity: 0, deduction: 0, confidence: "scazuta" }), false);
+  assert.equal(needsConfirmation({ severity: 2, deduction: 8, confidence: "medie", userVerdict: "contestat" }), false);
+});
+
+test("saved results from before identity confidence are flagged for a re-check", () => {
+  const cases = (list: object[]) => ({ cases: list }) as Parameters<typeof isPreIdentityLegal>[0];
+  assert.equal(isPreIdentityLegal(cases([{ matchedBy: "administrator", severity: 4 }])), true);
+  assert.equal(isPreIdentityLegal(cases([{ matchedBy: "administrator", severity: 4, confidence: "scazuta" }])), false);
+  assert.equal(isPreIdentityLegal(cases([{ matchedBy: "firma", severity: 2 }])), false); // firm name match is certain
+  assert.equal(isPreIdentityLegal(cases([])), false);
+  assert.equal(isPreIdentityLegal(null), false);
 });
 
 test("party role classification", () => {

@@ -9,17 +9,15 @@ import type {
   BenchmarkItem,
   BenchmarkResult,
   BusinessMetrics,
-  BusinessScore,
   CaseKind,
   CaseOutcome,
   ClientShareBucket,
-  Company,
   CourtCase,
   CourtHearing,
-  FinalScoreResult,
   InvestmentEvaluation,
   InvestmentInput,
   InvestmentPurpose,
+  LegalCheckResult,
   PartyRoleCategory,
   PaymentTermBucket,
   QuestionFeedback,
@@ -27,12 +25,10 @@ import type {
   QuizEvaluation,
   QuizGroundTruth,
   QuizLevel,
-  ScoreStatus,
   SectorBenchmark,
   SeverityLevel,
-  SubScore,
 } from "../types/scoring";
-import { linearScore, monthLabel, num, piecewise, round1 } from "./util.ts";
+import { piecewise, round1 } from "./util.ts";
 
 export { round1 };
 
@@ -68,14 +64,12 @@ export const INVESTMENT_PURPOSES: {
 
 /** Significant storno threshold (% of total issued). */
 export const CREDIT_NOTE_THRESHOLD_PCT = 5;
-/** Neutral score used when portal.just.ro is unreachable or not checked yet. */
-export const FALLBACK_LEGAL_SCORE = 80;
 /** Quiz score 0-34 = "deconectare de la cifre": kill-switch. */
 export const QUIZ_CONTROL_THRESHOLD = 35;
 export const QUIZ_CONTROL_PENALTY = 10;
 
-/** Plausible names that are NOT real suppliers (quiz distractors). */
-export const DECOY_SUPPLIERS = ["Alimenta Grup Est SRL", "Distrib Nord Food SRL"];
+/** Extra quiz option instead of invented distractor names: the real supplier is not among the listed ones. */
+export const OTHER_SUPPLIER = "Alt furnizor (nu e în listă)";
 
 const ron = (n: number) =>
   `${new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 0 }).format(n)} RON`;
@@ -112,9 +106,9 @@ export function quizTruthFromMetrics(m: BusinessMetrics): QuizGroundTruth {
   };
 }
 
-/** Options for quiz question 4: top 5 suppliers + distractors, in stable alphabetical order. */
+/** Options for quiz question 4: the real top suppliers from the uploaded invoices (alphabetical) + "another supplier". */
 export function supplierOptions(truth: QuizGroundTruth) {
-  return [...new Set([...truth.topSuppliers.map((s) => s.name), ...DECOY_SUPPLIERS])].sort((a, b) => a.localeCompare(b, "ro"));
+  return [...[...new Set(truth.topSuppliers.map((s) => s.name))].sort((a, b) => a.localeCompare(b, "ro")), OTHER_SUPPLIER];
 }
 
 export function quizLevel(total: number): { level: QuizLevel; label: string } {
@@ -358,6 +352,184 @@ export function partyNameExact(partyName: string, searched: string, type: "perso
   const want = nameTokens(searched, type);
   const have = nameTokens(partyName, type);
   return want.length > 0 && have.length === want.length && have.every((t, i) => t === want[i]);
+}
+
+// ---- Identity confidence ---------------------------------------------------
+// portal.just.ro publishes no CNP/CUI, so an exact name can still be a namesake.
+// Signals available without CNP: the firm in the same case, and where the court is.
+
+/** The 41 counties + Bucharest, with their seat (used to locate courts). */
+export const COUNTIES: { name: string; seat: string }[] = [
+  { name: "Alba", seat: "Alba Iulia" },
+  { name: "Arad", seat: "Arad" },
+  { name: "Argeș", seat: "Pitești" },
+  { name: "Bacău", seat: "Bacău" },
+  { name: "Bihor", seat: "Oradea" },
+  { name: "Bistrița-Năsăud", seat: "Bistrița" },
+  { name: "Botoșani", seat: "Botoșani" },
+  { name: "Brașov", seat: "Brașov" },
+  { name: "Brăila", seat: "Brăila" },
+  { name: "București", seat: "București" },
+  { name: "Buzău", seat: "Buzău" },
+  { name: "Caraș-Severin", seat: "Reșița" },
+  { name: "Călărași", seat: "Călărași" },
+  { name: "Cluj", seat: "Cluj-Napoca" },
+  { name: "Constanța", seat: "Constanța" },
+  { name: "Covasna", seat: "Sfântu Gheorghe" },
+  { name: "Dâmbovița", seat: "Târgoviște" },
+  { name: "Dolj", seat: "Craiova" },
+  { name: "Galați", seat: "Galați" },
+  { name: "Giurgiu", seat: "Giurgiu" },
+  { name: "Gorj", seat: "Târgu Jiu" },
+  { name: "Harghita", seat: "Miercurea Ciuc" },
+  { name: "Hunedoara", seat: "Deva" },
+  { name: "Ialomița", seat: "Slobozia" },
+  { name: "Iași", seat: "Iași" },
+  { name: "Ilfov", seat: "Buftea" },
+  { name: "Maramureș", seat: "Baia Mare" },
+  { name: "Mehedinți", seat: "Drobeta-Turnu Severin" },
+  { name: "Mureș", seat: "Târgu Mureș" },
+  { name: "Neamț", seat: "Piatra Neamț" },
+  { name: "Olt", seat: "Slatina" },
+  { name: "Prahova", seat: "Ploiești" },
+  { name: "Satu Mare", seat: "Satu Mare" },
+  { name: "Sălaj", seat: "Zalău" },
+  { name: "Sibiu", seat: "Sibiu" },
+  { name: "Suceava", seat: "Suceava" },
+  { name: "Teleorman", seat: "Alexandria" },
+  { name: "Timiș", seat: "Timișoara" },
+  { name: "Tulcea", seat: "Tulcea" },
+  { name: "Vaslui", seat: "Vaslui" },
+  { name: "Vâlcea", seat: "Râmnicu Vâlcea" },
+  { name: "Vrancea", seat: "Focșani" },
+];
+
+/** Courts of appeal cover several counties (keyed by the county of their seat). */
+const APPEAL_REGIONS: Record<string, string[]> = {
+  Alba: ["Alba", "Hunedoara", "Sibiu"],
+  Bacău: ["Bacău", "Neamț"],
+  Brașov: ["Brașov", "Covasna"],
+  București: ["București", "Ilfov", "Călărași", "Giurgiu", "Ialomița", "Teleorman"],
+  Cluj: ["Cluj", "Bistrița-Năsăud", "Maramureș", "Sălaj"],
+  Constanța: ["Constanța", "Tulcea"],
+  Dolj: ["Dolj", "Gorj", "Mehedinți", "Olt"],
+  Galați: ["Galați", "Brăila", "Vrancea"],
+  Iași: ["Iași", "Botoșani", "Vaslui"],
+  Bihor: ["Bihor", "Satu Mare"],
+  Argeș: ["Argeș", "Vâlcea"],
+  Prahova: ["Prahova", "Buzău", "Dâmbovița"],
+  Suceava: ["Suceava"],
+  Mureș: ["Mureș", "Harghita"],
+  Timiș: ["Timiș", "Arad", "Caraș-Severin"],
+};
+
+const compact = (s: string) => normalizeRo(s).replace(/[^a-z]/g, "");
+
+/** County named in a place/court string ("Judecatoria CLUJNAPOCA" -> "Cluj"); "" if none or ambiguous. */
+export function countyOf(place: string) {
+  const p = compact(place).replace(/^(judecatoria|tribunalul|curteadeapel)(specializat|comercial|pentruminorisifamilie)?/, "");
+  if (!p) return "";
+  const hits = new Set(COUNTIES.filter((c) => p.includes(compact(c.name)) || p.includes(compact(c.seat))).map((c) => c.name));
+  return hits.size === 1 ? [...hits][0] : "";
+}
+
+/** County of the firm's registered office: the chosen county ("" = unknown), else the county of its city. */
+export const companyCounty = (c: { county?: string; city?: string }) => c.county ?? countyOf(c.city ?? "");
+
+/** Counties a court has jurisdiction over (empty = unknown or national). */
+export function courtCounties(institutie: string): string[] {
+  const c = compact(institutie);
+  if (!c || c.includes("inaltacurte")) return [];
+  const county = countyOf(institutie);
+  if (!county) return [];
+  return c.startsWith("curteadeapel") ? (APPEAL_REGIONS[county] ?? [county]) : [county];
+}
+
+export type IdentityConfidence = "ridicata" | "medie" | "scazuta";
+
+export const CONFIDENCE_LABEL: Record<IdentityConfidence, string> = {
+  ridicata: "Identitate sigură",
+  medie: "Identitate probabilă",
+  scazuta: "Probabil omonim",
+};
+
+export interface IdentityInput {
+  matchedBy: CourtCase["matchedBy"];
+  /** Every party name in the case (not only the matched one). */
+  partyNames: string[];
+  institutie: string;
+  companyName: string;
+  /** County of the firm's registered office ("" = unknown). */
+  companyCounty: string;
+}
+
+/** How sure we are that a case found by name really belongs to the searched firm / person. */
+export function assessIdentity(input: IdentityInput): { confidence: IdentityConfidence; reasons: string[] } {
+  if (input.matchedBy === "firma") {
+    return {
+      confidence: "ridicata",
+      reasons: ["Denumirea firmei este unică în Registrul Comerțului, iar numele din dosar se potrivește exact."],
+    };
+  }
+  const noCnp = "Portalul nu publică CNP-ul, deci numele singur nu dovedește că e aceeași persoană.";
+  if (input.companyName && input.partyNames.some((n) => partyNameExact(n, input.companyName, "firma"))) {
+    return {
+      confidence: "ridicata",
+      reasons: [`${noCnp} Firma apare și ea ca parte în același dosar: legătură directă cu administratorul.`],
+    };
+  }
+  const area = courtCounties(input.institutie);
+  const county = input.companyCounty;
+  if (!county || area.length === 0) {
+    return {
+      confidence: "medie",
+      reasons: [
+        `${noCnp} ${!county ? "Județul sediului firmei nu e completat" : "Județul instanței nu a putut fi stabilit"}, deci localizarea nu poate fi comparată.`,
+      ],
+    };
+  }
+  if (area.includes(county)) {
+    return {
+      confidence: "medie",
+      reasons: [`${noCnp} Instanța este în zona sediului firmei (județul ${county}), deci e plauzibil să fie administratorul, dar poate fi și un omonim din același județ.`],
+    };
+  }
+  return {
+    confidence: "scazuta",
+    reasons: [`${noCnp} Instanța este în ${area.length > 1 ? `regiunea ${area.join(", ")}` : `județul ${area[0]}`}, iar firma are sediul în județul ${county}: probabil un omonim.`],
+  };
+}
+
+/** Share of the deduction applied before the user confirms the case is theirs. */
+export const CONFIDENCE_WEIGHT: Record<IdentityConfidence, number> = { ridicata: 1, medie: 0.5, scazuta: 0 };
+
+type ImpactCase = Pick<CourtCase, "severity" | "deduction"> & Partial<Pick<CourtCase, "confidence" | "userVerdict">>;
+
+/** Does the user still need to confirm or dispute this case? */
+export function needsConfirmation(c: ImpactCase) {
+  return !c.userVerdict && c.severity > 0 && (c.confidence === "medie" || c.confidence === "scazuta");
+}
+
+/**
+ * Severity and deduction that actually count, after identity confidence and the user's answer:
+ * disputed or probable namesake → 0; probable identity → half, and a critical case
+ * counts as "grav" (no kill-switch) until confirmed. Old results without confidence count in full.
+ */
+export function caseImpact(c: ImpactCase): { severity: SeverityLevel; deduction: number } {
+  if (c.userVerdict === "contestat") return { severity: 0, deduction: 0 };
+  if (c.userVerdict === "confirmat" || !c.confidence || c.confidence === "ridicata") return { severity: c.severity, deduction: c.deduction };
+  if (c.confidence === "scazuta") return { severity: 0, deduction: 0 };
+  if (c.severity === 4) return { severity: 3, deduction: SEVERITY_DEDUCTION[3] };
+  return { severity: c.severity, deduction: Math.round(c.deduction * CONFIDENCE_WEIGHT.medie) };
+}
+
+/** Short impact text for a case badge, e.g. "-4 p (din 8) până la confirmare". */
+export function impactLabel(c: ImpactCase) {
+  const eff = caseImpact(c);
+  const full = c.severity === 4 ? "scor legal 0" : `-${c.deduction} p`;
+  if (eff.severity === c.severity && eff.deduction === c.deduction) return full;
+  if (c.userVerdict === "contestat") return "0 p (contestat)";
+  return `${eff.deduction === 0 ? "0 p" : `-${eff.deduction} p`} până la confirmare (complet: ${full})`;
 }
 
 /** Roles where the case is directed AGAINST the searched party. */
@@ -884,151 +1056,44 @@ export function scoreLegalCases(cases: Pick<CourtCase, "severity" | "deduction">
   return { legalScore: Math.max(0, 100 - totalDeduction), integrityKillSwitch: false, criticalCount, totalDeduction, minorCapApplied };
 }
 
-// ---------------------------------------------------------------------------
-// Final score (0-100)
-// ---------------------------------------------------------------------------
-
-export function statusForScore(score: number): ScoreStatus {
-  if (score >= 80) return "Bank-Ready";
-  if (score >= 60) return "Pregătit cu rezerve";
-  if (score >= 40) return "Necesită optimizare";
-  return "Risc ridicat";
+/** Legal score from what actually counts per case (identity confidence + user confirmations). */
+export function scoreLegalImpact(cases: ImpactCase[]) {
+  return scoreLegalCases(cases.map(caseImpact));
 }
+
+/** Recomputes the score fields of a legal result (after the user confirms or disputes a case). */
+export function rescoreLegal(r: LegalCheckResult): LegalCheckResult {
+  const uncertainCount = r.cases.filter(needsConfirmation).length;
+  if (r.isFallback) return { ...r, uncertainCount };
+  const s = scoreLegalImpact(r.cases);
+  return {
+    ...r,
+    criticalCount: s.criticalCount,
+    totalDeduction: s.totalDeduction,
+    minorCapApplied: s.minorCapApplied,
+    legalScore: s.legalScore,
+    integrityKillSwitch: s.integrityKillSwitch,
+    uncertainCount,
+  };
+}
+
+export const caseKey = (c: Pick<CourtCase, "numar" | "institutie">) => `${c.numar}|${c.institutie}`;
 
 /**
- * ScorFinal = 0.70·S_Business + 0.15·S_Uman + 0.15·S_Investiție
- * S_Uman = 0.5·Quiz + 0.5·PortalJust ; S_Investiție = 0.5·Formular + 0.5·Benchmark
- * Kill-switch: Quiz 0-34 → -10 puncte din ScorFinal (fără a coborî sub 0).
+ * A saved result from before identity confidence existed: its administrator cases count in full,
+ * so a namesake's criminal case can still zero the score. Such results should be re-run.
  */
-export function calculateFinalScore(input: {
-  sBusiness: number;
-  quizScore: number;
-  legalScore: number;
-  investmentFormScore: number;
-  benchmarkScore: number;
-}): FinalScoreResult {
-  const { sBusiness, quizScore, legalScore, investmentFormScore, benchmarkScore } = input;
-  const sUman = 0.5 * quizScore + 0.5 * legalScore;
-  const sInvestitie = 0.5 * investmentFormScore + 0.5 * benchmarkScore;
-  const businessPoints = 0.7 * sBusiness;
-  const humanPoints = 0.15 * sUman;
-  const investmentPoints = 0.15 * sInvestitie;
-  const rawScore = businessPoints + humanPoints + investmentPoints;
-
-  const warnings: string[] = [];
-  const quizKillSwitch = quizScore < QUIZ_CONTROL_THRESHOLD;
-  let score = rawScore;
-  if (quizKillSwitch) {
-    score = Math.max(0, score - QUIZ_CONTROL_PENALTY);
-    warnings.push(
-      `Kill-switch de guvernanță: Quiz-ul financiar are ${quizScore}/100 (sub ${QUIZ_CONTROL_THRESHOLD}). Conducerea nu cunoaște indicatorii de bază ai firmei — se scad ${QUIZ_CONTROL_PENALTY} puncte din scorul final.`,
-    );
-  }
-
-  const finalScore = round1(score);
-  return {
-    finalScore,
-    rawScore: round1(rawScore),
-    status: statusForScore(finalScore),
-    pillars: {
-      business: { score: round1(sBusiness), points: round1(businessPoints), maxPoints: 70 },
-      human: { score: round1(sUman), points: round1(humanPoints), maxPoints: 15, quizScore, legalScore },
-      investment: {
-        score: round1(sInvestitie),
-        points: round1(investmentPoints),
-        maxPoints: 15,
-        formScore: investmentFormScore,
-        benchmarkScore: round1(benchmarkScore),
-      },
-    },
-    quizKillSwitch,
-    warnings,
-  };
+export function isPreIdentityLegal(r: Pick<LegalCheckResult, "cases"> | null | undefined) {
+  return !!r?.cases?.some((c) => c.matchedBy === "administrator" && !c.confidence);
 }
 
 // ---------------------------------------------------------------------------
-// Pillar 1 — S_Business (0-100) from e-Factura metrics
+// Final score & Pillar 1 — S_Business: audited BCR formulas live in ./scoring.ts
+// (bands and loan terms in ./bcr-formulas.ts). Re-exported here so existing imports keep working.
 // ---------------------------------------------------------------------------
 
-/** Indicative loan terms used to estimate the new installment (shown in the UI). */
-export const LOAN_ANNUAL_RATE = 0.095;
-export const LOAN_MONTHS = 60;
-
-/** Annuity installment for `principal` at LOAN_ANNUAL_RATE over LOAN_MONTHS. */
-export function estimateInstallment(principal: number) {
-  if (!principal || principal <= 0) return 0;
-  const r = LOAN_ANNUAL_RATE / 12;
-  return (principal * r) / (1 - (1 + r) ** -LOAN_MONTHS);
-}
-
-/** DSCR → score: ≤0.9 → 0, 1.0 → 30, 1.2 → 60, 1.5 → 90, ≥2.0 → 100. */
-export const dscrScore = (dscr: number) =>
-  piecewise(dscr, [
-    [0.9, 0],
-    [1.0, 30],
-    [1.2, 60],
-    [1.5, 90],
-    [2.0, 100],
-  ]);
-
-export function computeBusinessScore(m: BusinessMetrics, company: Company, requestedAmount: number | null): BusinessScore {
-  const loanInstallment = estimateInstallment(requestedAmount ?? 0);
-  const debtService = company.existingMonthlyDebtService + loanInstallment;
-  const dscr = debtService > 0 ? m.operatingCashFlow / debtService : 5;
-
-  const dsoPart = linearScore(m.dsoDays, 30, 75);
-  const latePart = linearScore(m.lateSharePct, 5, 40);
-
-  const items: SubScore[] = [
-    {
-      id: "stability",
-      label: "Stabilitatea încasărilor",
-      weight: 0.25,
-      score: linearScore(m.revenueCv, 0.1, 0.45),
-      value: `volatilitate lunară (CV) ${num(m.revenueCv * 100)}%`,
-      rule: "CV = deviația standard / media vânzărilor lunare. CV ≤ 10% → 100 p, CV ≥ 45% → 0 p, liniar între.",
-    },
-    {
-      id: "payments",
-      label: "Comportamentul de plată al clienților",
-      weight: 0.25,
-      score: 0.6 * dsoPart + 0.4 * latePart,
-      value: `DSO ${num(m.dsoDays)} zile · ${num(m.lateSharePct)}% din valoare încasată cu întârziere`,
-      rule: `60% DSO (≤ 30 zile → 100 p, ≥ 75 zile → 0 p) + 40% facturi întârziate > 5 zile (≤ 5% → 100 p, ≥ 40% → 0 p).`,
-    },
-    {
-      id: "seasonality",
-      label: "Sezonalitate",
-      weight: 0.1,
-      score: linearScore(m.seasonalityRatio, 1.25, 2.5),
-      value: `vârf ${monthLabel(m.peakMonth)} / minim ${monthLabel(m.troughMonth)} = ${num(m.seasonalityRatio)}×`,
-      rule: "Raport lună maximă / lună minimă. ≤ 1,25× → 100 p, ≥ 2,5× → 0 p.",
-    },
-    {
-      id: "concentration",
-      label: "Concentrarea veniturilor",
-      weight: 0.15,
-      score: linearScore(m.topClientSharePct, 15, 60),
-      value: `cel mai mare client: ${num(m.topClientSharePct)}% din vânzări`,
-      rule: "Ponderea clientului #1 în vânzările pe 12 luni. ≤ 15% → 100 p, ≥ 60% → 0 p.",
-    },
-    {
-      id: "repayment",
-      label: "Capacitatea estimată de rambursare",
-      weight: 0.25,
-      score: dscrScore(dscr),
-      value: `DSCR ${num(dscr)}× (cash-flow operațional ${Math.round(m.operatingCashFlow).toLocaleString("ro-RO")} RON / rate ${Math.round(debtService).toLocaleString("ro-RO")} RON)`,
-      rule: `DSCR = cash-flow operațional lunar / (rate existente + rata nouă estimată la ${LOAN_ANNUAL_RATE * 100}%/an, ${LOAN_MONTHS} luni). ≤ 0,9 → 0 p · 1,0 → 30 p · 1,2 → 60 p · 1,5 → 90 p · ≥ 2,0 → 100 p.`,
-    },
-  ].map((i) => ({ ...i, score: round1(i.score) }) as SubScore);
-
-  return {
-    score: round1(items.reduce((s, i) => s + i.weight * i.score, 0)),
-    items,
-    loanInstallment: Math.round(loanInstallment),
-    dscr: Math.round(dscr * 100) / 100,
-  };
-}
+export { calculateFinalScore, computeBusinessScore, DSCR_NO_DEBT, statusForScore } from "./scoring.ts";
+export { annuityInstallment as estimateInstallment, dscrScore, LOAN_ANNUAL_RATE, LOAN_MONTHS } from "./bcr-formulas.ts";
 
 // ---------------------------------------------------------------------------
 // Pillar 3b — Sector benchmark (0-100)

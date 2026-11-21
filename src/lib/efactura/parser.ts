@@ -5,11 +5,13 @@
  */
 import { XMLParser } from "fast-xml-parser";
 import type { Company, Invoice } from "../../types/scoring";
-import { invoiceKey } from "../data/synthetic.ts";
-import { normCui, round2 } from "../util.ts";
+import { invoiceKey, isSameParty } from "../company.ts";
+import { round2 } from "../util.ts";
 
 export interface ParseResult {
   ok: boolean;
+  /** How the invoice was linked to the active company (CUI match, name match, or not matched). */
+  matchedBy?: "cui" | "nume" | "nepotrivit";
   fileName: string;
   invoice?: Invoice;
   warnings: string[];
@@ -97,11 +99,22 @@ export function parseEFacturaXml(xml: string, fileName: string, company: Company
 
   const supplier = party(root, "AccountingSupplierParty");
   const customer = party(root, "AccountingCustomerParty");
-  const me = normCui(company.cui);
+  // Issued (sale) when the active company is the supplier, received (purchase) when it is the customer.
+  // CUI decides when both sides have one; otherwise the normalized names (no "SRL"/"SC", no diacritics).
   let direction: Invoice["direction"] = "issued";
-  if (normCui(supplier.cui) === me) direction = "issued";
-  else if (normCui(customer.cui) === me) direction = "received";
-  else warnings.push(`CUI-ul firmei (${company.cui}) nu apare ca furnizor sau client; factura a fost tratată ca emisă.`);
+  let matchedBy: ParseResult["matchedBy"] = "nepotrivit";
+  const via = (p: { cui: string }) => (company.cui && p.cui ? "cui" : "nume");
+  if (isSameParty(supplier, company)) {
+    direction = "issued";
+    matchedBy = via(supplier);
+  } else if (isSameParty(customer, company)) {
+    direction = "received";
+    matchedBy = via(customer);
+  } else {
+    const who = company.cui ? `CUI-ul ${company.cui} / numele „${company.name}”` : `numele „${company.name}” (firma nu are CUI)`;
+    warnings.push(`Firma activă nu apare ca furnizor sau client (${who}); factura a fost atașată firmei active ca emisă. Verifică dacă ai selectat firma corectă.`);
+  }
+  if (matchedBy === "nume") warnings.push("Factura a fost potrivită cu firma activă după nume (fără CUI).");
 
   if (currency !== "RON") warnings.push(`Moneda ${currency}: sumele sunt folosite ca atare, fără conversie în RON.`);
   if (typeCode === "381") warnings.push("Factură storno (381): reduce cifra de afaceri și crește rata de stornări.");
@@ -125,5 +138,5 @@ export function parseEFacturaXml(xml: string, fileName: string, company: Company
     source: "xml-upload",
   };
   invoice.id = invoiceKey(invoice);
-  return { ok: true, fileName, invoice, warnings };
+  return { ok: true, fileName, invoice, warnings, matchedBy };
 }

@@ -4,7 +4,7 @@ export const cx = (...c: (string | false | null | undefined)[]) => c.filter(Bool
 
 export function Card({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <section id={id} className={cx("rounded-2xl border border-line bg-card p-5 shadow-card sm:p-6", className)}>
+    <section id={id} className={cx("rounded-[24px] border border-white/80 bg-card p-5 shadow-card backdrop-blur-xl sm:p-7", className)}>
       {children}
     </section>
   );
@@ -22,11 +22,11 @@ export function CardHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
-        {icon && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-navy-soft text-navy-3">{icon}</span>}
+        {icon && <span className="mt-px shrink-0 text-faint [&_svg]:h-[17px] [&_svg]:w-[17px]">{icon}</span>}
         <div className="min-w-0">
-          <h2 className="text-[15px] font-bold leading-tight text-ink">{title}</h2>
+          <h2 className="text-base font-medium leading-tight tracking-tight text-ink">{title}</h2>
           {subtitle && <p className="mt-0.5 text-xs leading-relaxed text-muted">{subtitle}</p>}
         </div>
       </div>
@@ -38,7 +38,7 @@ export function CardHeader({
 type Tone = "neutral" | "navy" | "emerald" | "amber" | "red" | "blue";
 
 const TONE: Record<Tone, string> = {
-  neutral: "bg-canvas text-muted border-line",
+  neutral: "bg-navy-soft/70 text-muted border-transparent",
   navy: "bg-navy-soft text-navy-3 border-transparent",
   emerald: "bg-emerald-soft text-emerald-strong border-transparent",
   amber: "bg-amber-soft text-amber border-transparent",
@@ -48,7 +48,7 @@ const TONE: Record<Tone, string> = {
 
 export function Badge({ tone = "neutral", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (
-    <span className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold", TONE[tone], className)}>
+    <span className={cx("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium", TONE[tone], className)}>
       {children}
     </span>
   );
@@ -57,10 +57,10 @@ export function Badge({ tone = "neutral", children, className }: { tone?: Tone; 
 type Variant = "primary" | "emerald" | "secondary" | "ghost";
 
 const VARIANT: Record<Variant, string> = {
-  primary: "bg-navy text-white hover:bg-navy-2 shadow-sm",
-  emerald: "bg-emerald text-white hover:bg-emerald-strong shadow-sm",
-  secondary: "bg-white text-ink border border-line-strong hover:border-navy-3 hover:text-navy-3",
-  ghost: "text-muted hover:text-ink hover:bg-canvas",
+  primary: "bg-navy text-white hover:bg-navy-2",
+  emerald: "bg-navy text-white hover:bg-navy-2",
+  secondary: "bg-white/80 text-ink border border-line hover:border-line-strong hover:bg-white",
+  ghost: "text-muted hover:text-ink hover:bg-white/70",
 };
 
 export function Button({
@@ -73,7 +73,7 @@ export function Button({
     <button
       type="button"
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         VARIANT[variant],
         className,
       )}
@@ -112,7 +112,7 @@ export const TONE_BAR: Record<Tone, string> = {
 export function ProgressBar({ value, tone, className }: { value: number; tone?: Tone; className?: string }) {
   const t = tone ?? scoreTone(value);
   return (
-    <div className={cx("h-2 w-full overflow-hidden rounded-full bg-canvas", className)}>
+    <div className={cx("h-1.5 w-full overflow-hidden rounded-full bg-navy-soft", className)}>
       <div className={cx("h-full rounded-full transition-[width] duration-500", TONE_BAR[t])} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
@@ -132,9 +132,9 @@ export function Stat({
   highlight?: boolean;
 }) {
   return (
-    <div className={cx("rounded-xl border border-line bg-card p-4", highlight && "animate-flash")}>
-      <p className="text-[11px] font-bold uppercase tracking-wider text-faint">{label}</p>
-      <p className={cx("mt-1 text-xl font-extrabold tracking-tight", tone ? TONE_TEXT[tone] : "text-ink")}>{value}</p>
+    <div className={cx("rounded-2xl border border-line/70 bg-white/60 p-4", highlight && "animate-flash")}>
+      <p className="text-xs text-muted">{label}</p>
+      <p className={cx("mt-1.5 text-2xl font-normal tracking-tight", tone ? TONE_TEXT[tone] : "text-ink")}>{value}</p>
       {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
     </div>
   );
@@ -164,8 +164,8 @@ export function Segmented<T extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              "rounded-xl border px-3 py-2.5 text-sm font-bold transition-colors",
-              active ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-ink hover:border-navy-3",
+              "rounded-full border px-3 py-2.5 text-sm font-medium transition-colors",
+              active ? "border-navy bg-navy text-white" : "border-line bg-white/80 text-ink hover:border-line-strong",
             )}
           >
             {o.label}
@@ -179,7 +179,7 @@ export function Segmented<T extends string>({
 export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-bold text-ink">{label}</span>
+      <span className="mb-1.5 block text-xs font-medium text-muted">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-[11px] text-muted">{hint}</span>}
     </label>
@@ -187,12 +187,12 @@ export function Field({ label, hint, children }: { label: ReactNode; hint?: Reac
 }
 
 export const inputCls =
-  "w-full rounded-xl border border-line-strong bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-navy-3 focus:ring-2 focus:ring-navy-soft";
+  "w-full rounded-xl border border-line bg-white/80 px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-navy-3 focus:bg-white focus:ring-4 focus:ring-navy-soft";
 
 export function Disclaimer({ className }: { className?: string }) {
   return (
-    <p className={cx("rounded-xl border border-line bg-canvas px-4 py-3 text-[11px] leading-relaxed text-muted", className)}>
-      <strong className="text-ink">Ghid de pregătire, nu aprobare bancară.</strong> Scorul „Credit Readiness” este calculat pe date
+    <p className={cx("rounded-2xl border border-line/70 px-4 py-3 text-[11px] leading-relaxed text-muted", className)}>
+      <strong className="font-medium text-ink">Ghid de pregătire, nu aprobare bancară.</strong> Scorul „Credit Readiness” este calculat pe date
       sintetice și pe facturile e-Factura încărcate, cu o formulă publică (vezi „Cum calculăm”). Nu reprezintă o ofertă, o decizie de
       creditare sau o evaluare de risc a BCR.
     </p>
