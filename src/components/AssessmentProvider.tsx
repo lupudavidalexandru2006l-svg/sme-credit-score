@@ -89,6 +89,9 @@ interface Workspace {
   history?: { date: string; score: number }[];
   /** Every saved evaluation (also in public.assessment_history when Supabase is configured). */
   snapshots?: AssessmentSnapshot[];
+  /** Quiz finished and saved (sequential quiz in step 1 / step 3). */
+  quizDone?: boolean;
+  investmentDone?: boolean;
 }
 
 const EMPTY_WORKSPACE: Workspace = { uploads: [], quiz: EMPTY_QUIZ, investment: EMPTY_INVESTMENT, legal: null, official: null, visited: [] };
@@ -159,6 +162,7 @@ function readStorage(): PersistedV4 | null {
   }
 }
 
+export type QuizKind = "quiz" | "investment";
 type SupabaseInfo = { configured: boolean; error?: string } | null;
 
 interface Ctx {
@@ -177,6 +181,10 @@ interface Ctx {
   setQuiz: (patch: Partial<QuizAnswers>) => void;
   investment: InvestmentInput;
   setInvestment: (patch: Partial<InvestmentInput>) => void;
+  /** Whether each quiz of the active company was finished and saved. */
+  quizCompleted: Record<QuizKind, boolean>;
+  /** Marks a quiz finished (saves it in the browser + Supabase) or reopens it (`done` = false). */
+  completeQuiz: (kind: QuizKind, done: boolean) => Promise<string | null>;
   legal: LegalCheckResult | null;
   legalLoading: boolean;
   /** Re-runs portal.just.ro for the active company (official ANAF name when known). */
@@ -443,6 +451,37 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const setInvestment = useCallback(
     (patch: Partial<InvestmentInput>) => updateWorkspace(activeId, (w) => ({ ...w, investment: { ...w.investment, ...patch } })),
     [activeId, updateWorkspace],
+  );
+  const quizCompleted: Record<QuizKind, boolean> = {
+    quiz: ws.quizDone ?? assessment.quiz.answered === 5,
+    investment: ws.investmentDone ?? Boolean(investment.purpose && investment.ownContributionPct != null && investment.requestedAmount),
+  };
+  const completeQuiz = useCallback(
+    async (kind: QuizKind, done: boolean): Promise<string | null> => {
+      updateWorkspace(activeId, (w) => (kind === "quiz" ? { ...w, quizDone: done } : { ...w, investmentDone: done }));
+      if (!done) return null;
+      if (!supabaseLive) return "Rezultat salvat în browser.";
+      try {
+        const r = (await apiFetch("/api/quiz-result", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyId: activeId,
+            kind,
+            quizAnswers: quiz,
+            quizScore: assessment.dataStatus.hasInvoices ? assessment.quiz.total : null,
+            investment,
+            sUman: assessment.final.pillars.human.score,
+            sInvestitie: assessment.final.pillars.investment.score,
+            finalScore: assessment.final.finalScore,
+          }),
+        }).then((x) => x.json())) as { persisted?: boolean; error?: string };
+        return r.persisted ? "Rezultat salvat în Supabase." : `Salvat în browser; Supabase: ${r.error ?? "nesalvat"}.`;
+      } catch {
+        return "Salvat în browser; API indisponibil.";
+      }
+    },
+    [activeId, assessment, investment, quiz, supabaseLive, updateWorkspace],
   );
   const markVisited = useCallback(
     (s: StepId) => updateWorkspace(activeId, (w) => (w.visited.includes(s) ? w : { ...w, visited: [...w.visited, s] })),
@@ -799,6 +838,8 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     setQuiz,
     investment,
     setInvestment,
+    quizCompleted,
+    completeQuiz,
     legal,
     legalLoading,
     runLegalCheck,
