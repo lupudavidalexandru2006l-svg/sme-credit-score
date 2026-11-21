@@ -16,8 +16,11 @@ import type { InvestmentPurpose, SectorBenchmark } from "../types/scoring";
 import { annuityInstallment, CREDIT_READY_MIN_SCORE, principalForInstallment } from "./bcr-formulas.ts";
 import { clamp, num, pct, ron } from "./util.ts";
 
+/** When the catalogue values were last checked against public bank offers. */
+export const BANK_DATA_AS_OF = "2025–2026";
+
 export const BANK_DISCLAIMER =
-  "Recomandările bancare sunt orientative, bazate pe criterii publice de eligibilitate din piața bancară din România și pe datele analizate. Aceasta nu reprezintă o ofertă fermă sau o aprobare de credit.";
+  "Dobânzile, maturitățile și aporturile afișate sunt valori orientative din piața bancară din România (2025–2026), calculate pe baza ofertelor publice; costul final depinde de ROBOR/IRCC la data acordării și de analiza băncii. Recomandările bancare sunt orientative, bazate pe criterii publice de eligibilitate din piața bancară din România și pe datele analizate. Aceasta nu reprezintă o ofertă fermă sau o aprobare de credit.";
 
 // ---------------------------------------------------------------------------
 // Input / output
@@ -63,6 +66,13 @@ export interface BankRecommendation {
   maxAmountBasis: string;
   maturityLabel: string;
   rateLabel: string;
+  /** Indicative yearly rate range (%), e.g. [8.5, 10.5]. */
+  rateRangePct: [number, number];
+  /** Minimum own contribution (%) and how the bank phrases it. */
+  minOwnPct: number;
+  minOwnLabel: string;
+  /** Minimum DSCR covenant (0 = not applicable). */
+  minDscr: number;
   /** DSCR recomputed with the requested amount at this product's terms (null for factoring). */
   dscrAtProduct: number | null;
   /** Monthly cost of the requested amount at this product's terms (installment or interest), RON. */
@@ -111,6 +121,7 @@ interface Product {
   maturityMonths: [number, number];
   maturityLabel?: string;
   rateLabel?: string;
+  ownLabel?: string;
   repayment: Repayment;
   /** Max amount as a share of annualized revenue. */
   maxRevenueShare: number;
@@ -154,8 +165,10 @@ export const BANK_PRODUCTS: Product[] = [
     minDscr: 1.25,
     minOwnPct: 15,
     purposeFit: { growth: 1, marketing: 0.55, working_capital: 0.2, refinancing: 0.1 },
-    rateRangePct: [9.5, 11],
-    maturityMonths: [36, 84],
+    rateRangePct: [8.5, 10.5],
+    rateLabel: "ROBOR 3M/6M + 2,5–4,2 pp (~8,5–10,5%/an)",
+    ownLabel: "15–20%",
+    maturityMonths: [12, 84],
     repayment: "anuitate",
     maxRevenueShare: 0.5,
     maxAbsolute: 5_000_000,
@@ -171,9 +184,10 @@ export const BANK_PRODUCTS: Product[] = [
     minDscr: 1.2,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, refinancing: 0.4, marketing: 0.3, growth: 0.2 },
-    rateRangePct: [9.5, 11],
-    maturityMonths: [12, 12],
-    maturityLabel: "12 luni, reînnoibilă anual",
+    rateRangePct: [8.5, 10.5],
+    rateLabel: "ROBOR 3M/6M + 2,5–4,2 pp (~8,5–10,5%/an)",
+    maturityMonths: [12, 36],
+    maturityLabel: "12–36 luni (revolving, reînnoibilă)",
     repayment: "dobanda",
     maxRevenueShare: 0.25,
     maxAbsolute: 3_000_000,
@@ -202,10 +216,10 @@ export const BANK_PRODUCTS: Product[] = [
     minDscr: 0,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, refinancing: 0.45, marketing: 0.2, growth: 0.15 },
-    rateRangePct: [9.5, 11],
+    rateRangePct: [8.5, 10.5],
     maturityMonths: [1, 4],
     maturityLabel: "30–120 de zile pe factură, revolving",
-    rateLabel: "dobândă orientativă 9,5–11%/an + comision de factoring",
+    rateLabel: "~8,5–10,5%/an + comision de factoring",
     repayment: "factoring",
     maxRevenueShare: 0.3,
     maxAbsolute: 4_000_000,
@@ -227,18 +241,19 @@ export const BANK_PRODUCTS: Product[] = [
   {
     id: "bt-mic",
     bank: "Banca Transilvania",
-    product: "Credit BT Mic / Microfinanțare",
+    product: "BT Mic — credit pentru afaceri mici (până la 200.000 RON)",
     kind: "microcredit",
     idealFor: "Firme mici, scor mediu (50–70), nevoie rapidă de capital de lucru sau echipamente, fără garanții imobiliare grele.",
     minScore: 50,
     minDscr: 1.15,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, growth: 0.9, marketing: 0.8, refinancing: 0.3 },
-    rateRangePct: [10, 11],
+    rateRangePct: [11, 13.5],
+    rateLabel: "~11–13,5%/an, fără garanții imobiliare",
     maturityMonths: [12, 60],
     repayment: "anuitate",
     maxRevenueShare: 0.3,
-    maxAbsolute: 250_000,
+    maxAbsolute: 200_000,
     signals: (x) => [
       {
         weight: 15,
@@ -257,35 +272,37 @@ export const BANK_PRODUCTS: Product[] = [
   {
     id: "bt-investitii",
     bank: "Banca Transilvania",
-    product: "Credit de Investiții IMM / Linie de Credit BT",
+    product: "Credit IMM Investiții BT (până la 2.500.000 RON)",
     kind: "investitie",
     idealFor: "Firme cu istoric solid (scor ≥ 65, DSCR ≥ 1,2) care finanțează investiții sau capital de lucru.",
     minScore: 65,
     minDscr: 1.2,
     minOwnPct: 10,
     purposeFit: { growth: 1, working_capital: 0.8, marketing: 0.6, refinancing: 0.3 },
-    rateRangePct: [9.5, 11],
+    rateRangePct: [8.8, 10.8],
+    rateLabel: "~8,8–10,8%/an",
     maturityMonths: [12, 84],
     repayment: "anuitate",
     maxRevenueShare: 0.5,
-    maxAbsolute: 5_000_000,
+    maxAbsolute: 2_500_000,
     signals: (x) => [stabilitySignal(x, 10, 0.3)],
   },
   {
     id: "ing-afaceri",
     bank: "ING Bank România",
-    product: "Credit pentru Afaceri / Linie de Credit ING",
+    product: "Credit Afaceri / Linie de Credit ING (până la 1.500.000 RON)",
     kind: "capital_lucru",
     idealFor: "Fluxuri digitale curate, volatilitate scăzută și clienți diversificați (client #1 sub 40%), scor ≥ 70.",
     minScore: 70,
     minDscr: 1.25,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, growth: 0.8, marketing: 0.65, refinancing: 0.4 },
-    rateRangePct: [9.5, 11],
+    rateRangePct: [8.8, 10.5],
+    rateLabel: "ROBOR 3M + 2,8–4,5 pp (~8,8–10,5%/an)",
     maturityMonths: [12, 60],
     repayment: "anuitate",
     maxRevenueShare: 0.3,
-    maxAbsolute: 3_000_000,
+    maxAbsolute: 1_500_000,
     signals: (x) => [
       stabilitySignal(x, 12, 0.25),
       {
@@ -306,8 +323,9 @@ export const BANK_PRODUCTS: Product[] = [
     minDscr: 1.25,
     minOwnPct: 20,
     purposeFit: { growth: 1, marketing: 0.7, working_capital: 0.6, refinancing: 0.2 },
-    rateRangePct: [9.5, 11],
-    maturityMonths: [24, 84],
+    rateRangePct: [8.5, 10.5],
+    rateLabel: "~8,5–10,5%/an",
+    maturityMonths: [12, 84],
     repayment: "anuitate",
     maxRevenueShare: 0.5,
     maxAbsolute: 5_000_000,
@@ -330,8 +348,11 @@ export const BANK_PRODUCTS: Product[] = [
     minDscr: 1.1,
     minOwnPct: 10,
     purposeFit: { working_capital: 1, growth: 0.9, refinancing: 0.55, marketing: 0.5 },
-    rateRangePct: [9.5, 11],
-    maturityMonths: [12, 120],
+    rateRangePct: [8.2, 10],
+    rateLabel: "~8,2–10,0%/an",
+    ownLabel: "10–15%",
+    maturityMonths: [12, 84],
+    maturityLabel: "până la 72–84 luni",
     repayment: "anuitate",
     maxRevenueShare: 0.5,
     maxAbsolute: 5_000_000,
@@ -360,10 +381,12 @@ export const BANK_PRODUCTS: Product[] = [
     idealFor: "Achiziția de utilaje, echipamente sau flotă — bunul finanțat este chiar garanția.",
     minScore: 62,
     minDscr: 1.2,
-    minOwnPct: 10,
+    minOwnPct: 15,
     purposeFit: { growth: 1, marketing: 0.25, working_capital: 0.1, refinancing: 0.1 },
-    rateRangePct: [9.5, 11],
-    maturityMonths: [12, 60],
+    rateRangePct: [8.5, 10.2],
+    rateLabel: "~8,5–10,2%/an",
+    ownLabel: "avans leasing 15–20%",
+    maturityMonths: [24, 60],
     repayment: "anuitate",
     maxRevenueShare: 0.6,
     maxAbsolute: 4_000_000,
@@ -521,6 +544,10 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
     maxAmountBasis: basis,
     maturityLabel: p.maturityLabel ?? (m0 === m1 ? `${m0} luni` : `${m0}–${m1} luni`),
     rateLabel: p.rateLabel ?? `dobândă orientativă ${num(p.rateRangePct[0])}–${num(p.rateRangePct[1])}%/an`,
+    rateRangePct: p.rateRangePct,
+    minOwnPct: p.minOwnPct,
+    minOwnLabel: p.ownLabel ?? (p.minOwnPct > 0 ? `min. ${p.minOwnPct}%` : "fără aport minim"),
+    minDscr: p.minDscr,
     dscrAtProduct: dscrAtProduct === null ? null : Math.round(dscrAtProduct * 100) / 100,
     monthlyCost: Math.round(cost),
     reasons: reasons.length ? reasons : ["Potrivire parțială: niciun criteriu nu este îndeplinit integral încă."],

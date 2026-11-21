@@ -7,6 +7,9 @@ import { num, pct, ron } from "@/lib/util";
 import { useAssessment } from "../AssessmentProvider";
 import { BenchmarkRow, ScoreRing } from "../charts";
 import { LoanSimulator } from "../LoanSimulator";
+import { LoanCostBreakdown } from "../LoanCostBreakdown";
+import { StressTestPanel } from "../StressTestPanel";
+import { ProductComparator } from "../ProductComparator";
 import { PageHeader, StepFooter } from "../Shell";
 import { Badge, Card, CardHeader, cx, inputCls } from "../ui";
 
@@ -158,7 +161,7 @@ export function InvestmentStep() {
                   Formular: <strong>{ev.total}</strong>/100
                 </p>
                 <p>
-                  Benchmark sector: <strong>{num(bench.score)}</strong>/100
+                  Benchmark sector (orientativ): <strong>{num(bench.score)}</strong>/100
                 </p>
                 <p className="text-xs text-muted">= {num(assessment.final.pillars.investment.points)} din 15 puncte finale</p>
               </div>
@@ -184,6 +187,12 @@ export function InvestmentStep() {
       </div>
 
       <LoanSimulator />
+
+      <LoanCostBreakdown />
+
+      <StressTestPanel />
+
+      <ProductComparator />
 
       <Card className="mt-5">
         <CardHeader

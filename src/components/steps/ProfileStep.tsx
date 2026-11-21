@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Building2, CircleAlert, CircleCheck, Lightbulb, LoaderCircle, Printer, Save, Scale, ShieldAlert, TrendingDown, UserRound } from "lucide-react";
+import { ArrowRight, Building2, CheckSquare, CircleAlert, CircleCheck, Lightbulb, LoaderCircle, Printer, Save, Scale, ShieldAlert, Square, TrendingDown, UserRound } from "lucide-react";
 import type { ActionItem, CourtCase, LegalCheckResult } from "@/types/scoring";
 import { caseImpact, CONFIDENCE_LABEL, impactLabel, scoreLegalImpact } from "@/lib/scoringEngine";
 import { num } from "@/lib/util";
@@ -11,21 +11,37 @@ import { ConsultantReport } from "../ConsultantReport";
 import { BankRecommendationSection } from "../BankRecommendationSection";
 import { UNLOCK_LABEL, useCan } from "../PlanGate";
 import { gateActionPlan } from "@/lib/pricing";
+import { apiFetch } from "@/lib/auth/client";
 import { HowWeScore } from "../HowWeScore";
+import { WhatIfSimulator } from "../WhatIfSimulator";
+import { HistoryComparisonPanel } from "../HistoryComparisonPanel";
+import { DocumentChecklist } from "../DocumentChecklist";
+import { BankReportPrint } from "../BankReportPrint";
 import { ScoreRing } from "../charts";
 import { PageHeader, StepFooter } from "../Shell";
 import { Badge, Button, Card, CardHeader, cx, ProgressBar, scoreTone, TONE_TEXT } from "../ui";
 
 const PRIORITY_TONE = { critică: "red", ridicată: "amber", medie: "navy" } as const;
 
-function ActionCard({ a }: { a: ActionItem }) {
+function ActionCard({ a, done, onToggle }: { a: ActionItem; done?: boolean; onToggle?: () => void }) {
   return (
-    <li className="rounded-xl border border-line bg-card p-4">
+    <li className={cx("rounded-xl border bg-card p-4 transition-colors", done ? "border-emerald/40 bg-emerald-soft/30" : "border-line")}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={PRIORITY_TONE[a.priority]}>Prioritate {a.priority}</Badge>
-        {a.impactPoints > 0 && <Badge tone="emerald">+{num(a.impactPoints)} p potențial</Badge>}
+        {a.impactPoints > 0 && (
+          <Badge tone="emerald">
+            <ArrowRight size={11} /> +{num(a.impactPoints)} pct
+          </Badge>
+        )}
       </div>
-      <p className="mt-2 text-sm font-semibold text-ink">{a.title}</p>
+      {onToggle ? (
+        <button type="button" onClick={onToggle} className="mt-2 flex w-full items-start gap-2 text-left" aria-pressed={done}>
+          {done ? <CheckSquare size={17} className="mt-0.5 shrink-0 text-emerald-strong" /> : <Square size={17} className="mt-0.5 shrink-0 text-faint" />}
+          <span className={cx("text-sm font-semibold", done ? "text-muted line-through" : "text-ink")}>{a.title}</span>
+        </button>
+      ) : (
+        <p className="mt-2 text-sm font-semibold text-ink">{a.title}</p>
+      )}
       <p className="mt-1 text-xs text-muted">{a.why}</p>
       <ul className="mt-3 space-y-1.5">
         {a.steps.map((s) => (
@@ -93,11 +109,11 @@ function LegalPartyReport({ icon, title, name, cases }: { icon: React.ReactNode;
 }
 
 export function ProfileStep() {
-  const { assessment, company, quiz, investment, legal, legalLoading, uploads, markVisited, plan: activePlan, showUpgrade } = useAssessment();
+  const { assessment, company, quiz, investment, legal, legalLoading, uploads, markVisited, plan: activePlan, showUpgrade, payPerUse, saveSnapshot, doneActions, toggleAction } = useAssessment();
   const { final: f, drivers, plan, quiz: q, business: b } = assessment;
   const canExport = useCan("exportPdf");
   // Starter: preview of the top 2 actions, the rest blurred.
-  const lockedActions = new Set(gateActionPlan(activePlan.planTier, plan).locked.map((a) => a.id));
+  const lockedActions = new Set(gateActionPlan(activePlan.planTier, plan, payPerUse).locked.map((a) => a.id));
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   useEffect(() => markVisited("profil"), [markVisited]);
@@ -106,12 +122,13 @@ export function ProfileStep() {
     setSaving(true);
     setSaveMsg(null);
     try {
-      const r = await fetch("/api/assessments", {
+      const r = await apiFetch("/api/assessments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company, quiz, investment, legal, uploads }),
       }).then((x) => x.json());
-      setSaveMsg(r.saved ? `Evaluare salvată în Supabase (scor recalculat pe server: ${r.finalScore}).` : (r.error ?? r.message));
+      const snap = await saveSnapshot();
+      setSaveMsg([r.saved ? `Evaluare salvată în Supabase (scor recalculat pe server: ${r.finalScore}).` : (r.error ?? r.message), snap.message].filter(Boolean).join(" "));
     } catch {
       setSaveMsg("API indisponibil.");
     } finally {
@@ -145,10 +162,15 @@ export function ProfileStep() {
       score: f.pillars.investment.score,
       points: f.pillars.investment.points,
       max: 15,
-      detail: `Formular ${f.pillars.investment.formScore}/100 · benchmark sector ${num(f.pillars.investment.benchmarkScore)}/100`,
+      detail: `Formular ${f.pillars.investment.formScore}/100 · benchmark sector orientativ ${num(f.pillars.investment.benchmarkScore)}/100`,
     },
   ];
   const maxLost = Math.max(...drivers.map((d) => d.lostPoints), 1);
+  const unlockedPlan = plan.filter((a) => !lockedActions.has(a.id));
+  const doneVisible = unlockedPlan.filter((a) => doneActions.includes(a.id));
+  const projectedGain = Math.round(doneVisible.reduce((s, a) => s + a.impactPoints, 0) * 10) / 10;
+  const projected = Math.min(100, Math.round((f.finalScore + projectedGain) * 10) / 10);
+  const maxProjected = Math.min(100, Math.round((f.finalScore + unlockedPlan.reduce((s, a) => s + a.impactPoints, 0)) * 10) / 10);
 
   return (
     <div className="animate-rise">
@@ -164,8 +186,12 @@ export function ProfileStep() {
                 canExport ? window.print() : showUpgrade("Exportul Raportului „Gata de Bancă” (Print/PDF) este inclus în Planul Pro, împreună cu planul complet de 30–90 de zile.")
               }
             >
-              <Printer size={15} /> Printează / PDF
+              <Printer size={15} /> Printează pagina
             </Button>
+            <BankReportPrint
+              allowed={canExport}
+              onBlocked={() => showUpgrade("„Fișa Pre-Calificare Bancă” (PDF, 1 pagină A4) este inclusă în Planul Pro și în Pay-Per-Use (49 RON / analiză).")}
+            />
             <Button onClick={save} disabled={saving}>
               {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />} Salvează evaluarea
             </Button>
@@ -193,7 +219,12 @@ export function ProfileStep() {
           </div>
           <div className="p-6">
             <p className="text-[11px] font-semibold text-faint">Formula aplicată</p>
-            <p className="mt-2 font-mono text-sm leading-relaxed text-ink">
+            {!f.complete && (
+              <p className="mt-2 rounded-xl bg-amber-soft px-3.5 py-2.5 text-xs font-medium text-amber">
+                ScorFinal = 0,70 × S_Business + 0,15 × S_Uman + 0,15 × S_Investiție se calculează după ce completezi datele reale. Până atunci nu afișăm valori estimate.
+              </p>
+            )}
+            <p className={cx("mt-2 font-mono text-sm leading-relaxed text-ink", !f.complete && "hidden")}>
               0,70 × {num(f.pillars.business.score)} + 0,15 × {num(f.pillars.human.score)} + 0,15 × {num(f.pillars.investment.score)} = {num(f.rawScore)}
               {f.quizKillSwitch && (
                 <>
@@ -209,10 +240,10 @@ export function ProfileStep() {
                     <p className="text-sm font-semibold text-ink">{p.name}</p>
                     <span className="text-[11px] font-semibold text-faint">{p.weight}</span>
                   </div>
-                  <p className={cx("mt-1 text-2xl font-medium", TONE_TEXT[scoreTone(p.score)])}>{num(p.score)}</p>
-                  <ProgressBar value={p.score} className="mt-1.5" />
+                  <p className={cx("mt-1 text-2xl font-medium", f.complete ? TONE_TEXT[scoreTone(p.score)] : "text-faint")}>{f.complete ? num(p.score) : "—"}</p>
+                  <ProgressBar value={f.complete ? p.score : 0} className="mt-1.5" />
                   <p className="mt-2 text-xs font-medium text-ink">
-                    {num(p.points)} / {p.max} puncte
+                    {f.complete ? num(p.points) : "—"} / {p.max} puncte
                   </p>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted">{p.detail}</p>
                 </div>
@@ -236,10 +267,13 @@ export function ProfileStep() {
         </div>
       </Card>
 
+      <WhatIfSimulator />
+
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card>
           <CardHeader icon={<TrendingDown size={18} />} title="Ce trage scorul în jos" subtitle="Puncte pierdute din scorul final, pe fiecare factor." />
-          <ul className="space-y-3.5">
+          {!f.complete && <p className="text-xs text-muted">Factorii apar după ce scorul e complet (facturi e-Factura, date declarate, o verificare externă).</p>}
+          <ul className={cx("space-y-3.5", !f.complete && "hidden")}>
             {drivers.slice(0, 6).map((d) => (
               <li key={d.id}>
                 <div className="flex items-baseline justify-between gap-3">
@@ -258,7 +292,24 @@ export function ProfileStep() {
         </Card>
 
         <Card>
-          <CardHeader icon={<Lightbulb size={18} />} title="Plan de acțiune 30–90 de zile" subtitle="Generat automat din punctele slabe detectate; se actualizează la fiecare factură încărcată." />
+          <CardHeader icon={<Lightbulb size={18} />} title="Plan de acțiune 30–90 de zile" subtitle="Bifează acțiunile pe măsură ce le faci: scorul proiectat se actualizează imediat (impact estimat în puncte)." />
+          {f.complete && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-canvas px-4 py-3">
+              <div>
+                <p className="text-[11px] text-muted">Scor curent</p>
+                <p className="text-2xl font-light tracking-tight text-ink">{num(f.finalScore)}</p>
+              </div>
+              <ArrowRight size={16} className="text-faint" />
+              <div>
+                <p className="text-[11px] text-muted">Scor proiectat peste 90 de zile</p>
+                <p className="text-2xl font-light tracking-tight text-emerald-strong">{num(projected)}</p>
+              </div>
+              <Badge tone={projectedGain > 0 ? "emerald" : "neutral"} className="ml-auto">
+                {projectedGain > 0 ? `+${num(projectedGain)} pct din ${doneVisible.length} acțiuni bifate` : "bifează acțiunile realizate"}
+              </Badge>
+              <p className="w-full text-[11px] text-faint">Dacă realizezi toate acțiunile: până la {num(maxProjected)} puncte. Impactul este o estimare pe formula publică.</p>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-3">
             {([30, 60, 90] as const).map((h) => {
               const items = plan.filter((a) => a.horizon === h);
@@ -276,7 +327,7 @@ export function ProfileStep() {
                             <ActionCard a={a} />
                           </div>
                         ) : (
-                          <ActionCard key={a.id} a={a} />
+                          <ActionCard key={a.id} a={a} done={doneActions.includes(a.id)} onToggle={() => toggleAction(a.id)} />
                         ),
                       )}
                     </ul>
@@ -301,6 +352,10 @@ export function ProfileStep() {
       </div>
 
       <BankRecommendationSection />
+
+      <HistoryComparisonPanel />
+
+      <DocumentChecklist />
 
       <ConsultantReport />
 

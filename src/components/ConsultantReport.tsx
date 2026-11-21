@@ -12,7 +12,7 @@ import { Badge, Card, CardHeader, cx } from "./ui";
  * the credit-file checklist and the progress on the action plan. Respects the plan gating of banks / actions.
  */
 export function ConsultantReport() {
-  const { assessment, company, investment, legal, official, docs, toggleDoc, doneActions, toggleAction, history, plan } = useAssessment();
+  const { assessment, company, investment, legal, official, docs, toggleDoc, doneActions, toggleAction, history, plan, payPerUse } = useAssessment();
   if (!company.id) return null;
   const input: ConsultantInput = { company, investment, legal, bilant: official.bilant, ageMonths: official.onrc?.vechimeLuni ?? null };
   const conclusion = consultantConclusion(assessment, input);
@@ -20,8 +20,8 @@ export function ConsultantReport() {
   const questions = bankQuestions(assessment, input);
   const documents = documentsFor(input);
   const haveDocs = documents.filter((d) => docs[d.id]).length;
-  const visibleBanks = gateBanks(plan.planTier, assessment.banks.all.filter((b) => b.eligible)).visible.slice(0, 3);
-  const visibleActions = gateActionPlan(plan.planTier, assessment.plan).visible;
+  const visibleBanks = gateBanks(plan.planTier, assessment.banks.all.filter((b) => b.eligible), payPerUse).visible.slice(0, 3);
+  const visibleActions = gateActionPlan(plan.planTier, assessment.plan, payPerUse).visible;
   const doneCount = visibleActions.filter((a) => doneActions.includes(a.id)).length;
 
   return (

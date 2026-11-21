@@ -5,8 +5,8 @@ import { FeatureMatrix, PricingFaq } from "@/components/PricingDetails";
 import { Disclaimer } from "@/components/ui";
 
 export const metadata: Metadata = {
-  title: "Prețuri și planuri — Credit Ready",
-  description: "Planurile Credit Ready pentru IMM-uri și contabili, oferta B2B pentru bănci și calculatorul de economii față de consultanța clasică.",
+  title: "Prețuri și planuri",
+  description: "Planurile Afghankingz Credit pentru IMM-uri și contabili, oferta B2B pentru bănci și calculatorul de economii față de consultanța clasică.",
 };
 
 export default function PricingPage() {

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Building2, ChartColumn, Check, ClipboardCheck, FileUp, LoaderCircle, RotateCcw, Tag, Target, UserRound, X } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Building2, ChartColumn, Check, ClipboardCheck, FileUp, LoaderCircle, LogIn, LogOut, RotateCcw, ShieldCheck, Tag, Target, UserRound, X } from "lucide-react";
+import { BrandLogo } from "./BrandLogo";
+import { useAuth } from "./AuthProvider";
 import { useAssessment, type StepId } from "./AssessmentProvider";
 import { Figure, ScoreRing } from "./charts";
 import { Button, cx, ProgressBar } from "./ui";
@@ -17,16 +19,6 @@ export const STEPS: { id: StepId; href: string; label: string; short: string; ic
   { id: "investitie", href: "/investitie", label: "Investiție & sector", short: "Investiție", icon: <Target size={16} /> },
   { id: "profil", href: "/profil", label: "Profil & plan", short: "Profil", icon: <ClipboardCheck size={16} /> },
 ];
-
-function BrandMark() {
-  return (
-    <span className="flex h-4 items-end gap-[3px]" aria-hidden>
-      <span className="h-1.5 w-[4px] rounded-full bg-navy/35" />
-      <span className="h-2.5 w-[4px] rounded-full bg-navy/65" />
-      <span className="h-4 w-[4px] rounded-full bg-navy" />
-    </span>
-  );
-}
 
 function useStepDone() {
   const { company, assessment, investment, visited } = useAssessment();
@@ -58,10 +50,9 @@ function Sidebar() {
 
   return (
     <aside className="no-print sticky top-3 hidden h-[calc(100vh-1.5rem)] w-[256px] shrink-0 flex-col overflow-y-auto rounded-[28px] border border-white/80 bg-white/55 p-5 shadow-card backdrop-blur-xl lg:flex">
-      <div className="flex items-center gap-2.5 px-1">
-        <BrandMark />
-        <p className="text-[15px] font-medium tracking-tight text-ink">Credit Ready</p>
-      </div>
+      <Link href="/onboarding" className="px-1" aria-label="Afghankingz Credit — acasă">
+        <BrandLogo tagline />
+      </Link>
 
       <nav className="mt-8 space-y-0.5" aria-label="Pașii evaluării">
         <p className="mb-2 px-3 text-xs text-faint">Evaluare</p>
@@ -102,6 +93,7 @@ function Sidebar() {
           </span>
           <span className="leading-tight">Prețuri / Planuri</span>
         </Link>
+        <AdminNavLink />
       </nav>
 
       <div className="mt-8 border-t border-line pt-6">
@@ -159,7 +151,7 @@ function Sidebar() {
           {verificationLoading ? <LoaderCircle size={11} className="animate-spin" /> : <span className={cx("h-1.5 w-1.5 rounded-full", verification.aggregateScore !== null ? "bg-emerald" : "bg-faint")} />}
           surse oficiale · {verificationLoading ? "interogare…" : `${verification.sources.filter((x) => x.score !== null).length}/${verification.sources.length} au răspuns`}
         </p>
-        <p className="pt-2 leading-relaxed">Ghid de pregătire pe date reale (ANAF, bilanț, VIES, portal.just.ro, e-Factura), nu aprobare bancară.</p>
+        <p className="pt-2 leading-relaxed">Afghankingz Credit · ghid de pregătire pe date reale (ANAF, bilanț, VIES, portal.just.ro, e-Factura), nu aprobare bancară.</p>
         <p className="flex gap-3">
           <Link href="/termeni" className="hover:text-ink">Termeni</Link>
           <Link href="/confidentialitate" className="hover:text-ink">Confidențialitate</Link>
@@ -175,10 +167,9 @@ function MobileNav() {
   return (
     <div className="no-print sticky top-0 z-20 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <BrandMark />
-          <p className="font-medium tracking-tight">Credit Ready</p>
-        </div>
+        <Link href="/onboarding" aria-label="Afghankingz Credit — acasă">
+          <BrandLogo size="sm" />
+        </Link>
         <Link href="/pricing" className={cx("ml-auto mr-3 rounded-full px-3 py-1 text-[11px]", path.startsWith("/pricing") ? "bg-navy text-white" : "border border-line text-muted")}>
           Prețuri
         </Link>
@@ -272,12 +263,57 @@ function CompanySwitcher() {
   );
 }
 
+/** Admin entry in the sidebar, only for admins (role 'admin' or the hackathon demo session). */
+function AdminNavLink() {
+  const path = usePathname();
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return null;
+  return (
+    <Link
+      href="/admin"
+      className={cx(
+        "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
+        path.startsWith("/admin") ? "bg-white text-ink shadow-[0_1px_3px_rgba(23,32,28,0.06)]" : "text-muted hover:bg-white/60 hover:text-ink",
+      )}
+    >
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line-strong text-faint">
+        <ShieldCheck size={12} />
+      </span>
+      <span className="leading-tight">Panou Admin</span>
+    </Link>
+  );
+}
+
+/** "Autentificare" / "Contul meu" + "Deconectare". Guest mode keeps working without an account. */
+export function AccountButtons() {
+  const { session, profile, signOut, loading } = useAuth();
+  if (loading) return null;
+  if (!session) {
+    return (
+      <Link href="/login" className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white/80 px-3.5 py-1.5 text-xs font-medium text-ink hover:border-line-strong">
+        <LogIn size={13} /> Autentificare
+      </Link>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1 rounded-full border border-line bg-white/80 p-1">
+      <Link href="/cont" className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-ink hover:bg-canvas" title={session.user.email ?? ""}>
+        <UserRound size={13} /> Contul meu{profile?.role === "admin" ? " · admin" : ""}
+      </Link>
+      <button type="button" onClick={() => void signOut()} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs text-muted hover:bg-canvas hover:text-ink">
+        <LogOut size={12} /> Deconectare
+      </button>
+    </div>
+  );
+}
+
 function TopBar() {
   const { uploads, resetUploads } = useAssessment();
   return (
     <div className="no-print flex flex-wrap items-center justify-between gap-3 px-4 pb-2 pt-5 sm:px-8">
       <CompanySwitcher />
       <div className="flex flex-wrap items-center gap-2">
+        <AccountButtons />
         <PlanBadge />
         {uploads.length > 0 && (
           <Button variant="secondary" onClick={resetUploads} title="Elimină facturile încărcate">

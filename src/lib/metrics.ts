@@ -1,5 +1,5 @@
 /**
- * Business indicators computed from e-Factura invoices (synthetic history + uploaded XML).
+ * Business indicators computed from the e-Factura invoices of the company (Supabase + uploaded XML).
  * Pure function: same invoices in, same metrics out. Re-run on every upload.
  */
 import type { BusinessMetrics, Company, Invoice, MonthPoint, PartyShare } from "../types/scoring";
@@ -25,13 +25,17 @@ function weightedAvg(pairs: [value: number, weight: number][]) {
   return w > 0 ? pairs.reduce((s, [v, x]) => s + v * x, 0) / w : 0;
 }
 
-export function computeMetrics(invoices: Invoice[], company: Company): BusinessMetrics {
+/**
+ * @param today ISO date used for the window when there are no issued invoices. The browser passes it after
+ * hydration ("" before), so rendering never reads the clock; server routes and tests default to now.
+ */
+export function computeMetrics(invoices: Invoice[], company: Company, today?: string): BusinessMetrics {
   const issued = invoices.filter((i) => i.direction === "issued");
   const received = invoices.filter((i) => i.direction === "received");
 
   // Window: the 12 calendar months ending with the month of the latest issued invoice.
   const latest = issued.reduce((max, i) => (i.issueDate > max ? i.issueDate : max), "0000-00-00");
-  const endMonth = latest === "0000-00-00" ? new Date().toISOString().slice(0, 7) : latest.slice(0, 7);
+  const endMonth = latest !== "0000-00-00" ? latest.slice(0, 7) : (today === undefined ? new Date().toISOString() : today || "1970-01-01").slice(0, 7);
   const startMonth = addMonths(endMonth, -11);
   const asOf = lastDayOfMonth(endMonth);
   const inWindow = (i: Invoice) => i.issueDate.slice(0, 7) >= startMonth && i.issueDate.slice(0, 7) <= endMonth;

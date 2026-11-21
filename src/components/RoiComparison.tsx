@@ -6,7 +6,7 @@ import { CONSULTING_BENCHMARK, computeRoi, EUR_RON, formatRon, ROI_COMPARISON } 
 
 const fmt = (n: number) => new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 0 }).format(n);
 
-/** "De ce merită?" — traditional consultancy vs. Credit Ready, with a yearly-savings calculator. */
+/** "De ce merită?" — traditional consultancy vs. Afghankingz Credit, with a yearly-savings calculator. */
 export function RoiComparison() {
   const [files, setFiles] = useState(2);
   const [hours, setHours] = useState(12);
@@ -14,7 +14,7 @@ export function RoiComparison() {
 
   return (
     <Card>
-      <CardHeader title="De ce merită? Consultanță clasică vs. Credit Ready" subtitle="Prețuri reale de piață pentru pregătirea unui dosar de credit IMM în România." />
+      <CardHeader title="De ce merită? Consultanță clasică vs. Afghankingz Credit" subtitle="Prețuri reale de piață pentru pregătirea unui dosar de credit IMM în România." />
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
@@ -22,7 +22,7 @@ export function RoiComparison() {
             <tr className="border-b border-line text-left text-xs text-muted">
               <th className="py-2.5 pr-4 font-normal" />
               <th className="py-2.5 pr-4 font-normal">Consultanță financiară tradițională</th>
-              <th className="py-2.5 font-medium text-emerald-strong">Credit Ready</th>
+              <th className="py-2.5 font-medium text-emerald-strong">Afghankingz Credit</th>
             </tr>
           </thead>
           <tbody>
@@ -48,7 +48,7 @@ export function RoiComparison() {
           </Field>
         </div>
         <div className="rounded-2xl bg-white p-5 text-center shadow-card">
-          <p className="text-xs text-muted">Economisești anual cu Credit Ready Pro</p>
+          <p className="text-xs text-muted">Economisești anual cu Afghankingz Credit Pro</p>
           <p key={roi.savingsRon} className="animate-rise mt-2 text-[40px] font-light leading-none tracking-tight text-emerald-strong">
             {formatRon(roi.savingsRon)}
           </p>

@@ -1,13 +1,17 @@
 import { connection, NextResponse, type NextRequest } from "next/server";
 import { getSupabase, listCompanies, upsertCompany, type UpsertCompanyInput } from "@/lib/supabase/server";
+import { getRequestUser } from "@/lib/auth/server";
 
-/** GET /api/companies — every saved company (none is ever deleted), oldest first. */
-export async function GET() {
+/**
+ * GET /api/companies — saved companies (none is ever deleted), oldest first.
+ * Signed in (Bearer token): the account's companies. Guest mode: companies that belong to no account.
+ */
+export async function GET(request: NextRequest) {
   await connection();
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ supabase: { configured: false }, companies: [] });
   try {
-    return NextResponse.json({ supabase: { configured: true }, companies: await listCompanies(sb) });
+    return NextResponse.json({ supabase: { configured: true }, companies: await listCompanies(sb, (await getRequestUser(request))?.id ?? null) });
   } catch (e) {
     return NextResponse.json({ supabase: { configured: true, error: e instanceof Error ? e.message : "eroare Supabase" }, companies: [] });
   }
@@ -29,7 +33,10 @@ export async function POST(request: NextRequest) {
   const sb = getSupabase();
   if (!sb) return NextResponse.json({ ok: false, mode: "local", message: "Supabase neconfigurat — firma se salvează doar în browser." });
   try {
-    const r = await upsertCompany(sb, { ...body, name, ceoName });
+    const user = await getRequestUser(request);
+    // The masked CNP is accepted only in its masked form; a raw 13-digit CNP is never stored.
+    const masked = typeof body?.ceoCnpMasked === "string" && /^\d{7}\*{6}$/.test(body.ceoCnpMasked) ? body.ceoCnpMasked : undefined;
+    const r = await upsertCompany(sb, { ...body, name, ceoName, ceoCnpMasked: masked, ceoCnpInfo: masked ? body?.ceoCnpInfo : undefined, userId: user?.id ?? null });
     return NextResponse.json({ ok: true, ...r });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "eroare Supabase" }, { status: 500 });

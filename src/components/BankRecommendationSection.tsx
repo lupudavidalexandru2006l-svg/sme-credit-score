@@ -5,46 +5,32 @@ import type { BankRecommendation } from "@/lib/bank-matcher";
 import { num, ron } from "@/lib/util";
 import { useAssessment } from "./AssessmentProvider";
 import { LockedGate } from "./PlanGate";
+import { BankLogo } from "./BankLogos";
 import { Badge, Card, CardHeader, cx, ProgressBar } from "./ui";
 
-const BANK_SHORT: Record<string, string> = {
-  BCR: "BCR",
-  "Banca Transilvania": "BT",
-  "ING Bank România": "ING",
-  "Raiffeisen Bank România": "RB",
-  "CEC Bank": "CEC",
-  "UniCredit Bank România": "UC",
-};
-
-/** Monogram badge built from UI primitives (no bank logos are copied). */
+/** Bank mark in the bank's brand colours (components/BankLogos.tsx). */
 function BankMark({ bank, large }: { bank: string; large?: boolean }) {
-  const initials = BANK_SHORT[bank] ?? bank.slice(0, 3).toUpperCase();
-  return (
-    <span
-      aria-hidden
-      className={cx(
-        "grid shrink-0 place-items-center rounded-xl bg-navy font-semibold tracking-tight text-white",
-        large ? "h-12 w-12 text-sm" : "h-9 w-9 text-[11px]",
-      )}
-    >
-      {initials}
-    </span>
-  );
+  return <BankLogo bank={bank} size={large ? 48 : 36} />;
 }
 
 const matchTone = (pct: number) => (pct >= 80 ? "emerald" : pct >= 60 ? "blue" : pct >= 45 ? "amber" : "red");
 
 function Facts({ r }: { r: BankRecommendation }) {
   const facts = [
-    { label: "Sumă maximă estimată", value: r.maxAmount > 0 ? ron(r.maxAmount) : "—", hint: r.maxAmountBasis },
-    { label: "Maturitate orientativă", value: r.maturityLabel },
-    { label: "Cost orientativ", value: r.rateLabel },
+    { label: "Dobândă orientativă", value: `${num(r.rateRangePct[0])}–${num(r.rateRangePct[1])}% / an`, hint: r.rateLabel },
+    { label: "Maturitate", value: r.maturityLabel },
+    { label: "Aport minim", value: r.minOwnLabel, hint: r.minDscr > 0 ? `DSCR minim ${num(r.minDscr)}×` : undefined },
     r.dscrAtProduct !== null
-      ? { label: "DSCR la acest produs", value: r.dscrAtProduct >= 99 ? "fără datorii" : `${num(r.dscrAtProduct)}×`, hint: r.monthlyCost > 0 ? `cost lunar estimat ${ron(r.monthlyCost)}` : undefined }
+      ? {
+          label: r.kind === "capital_lucru" && r.maturityLabel.includes("revolving") ? "Cost lunar estimat (dobândă)" : "Rată lunară estimată",
+          value: r.monthlyCost > 0 ? `${ron(r.monthlyCost)} / lună` : "—",
+          hint: r.dscrAtProduct >= 99 ? "fără datorii" : `DSCR la acest produs ${num(r.dscrAtProduct)}×`,
+        }
       : { label: "Rambursare", value: "din încasarea facturilor", hint: "fără rată lunară fixă" },
+    { label: "Sumă maximă estimată", value: r.maxAmount > 0 ? ron(r.maxAmount) : "—", hint: r.maxAmountBasis },
   ];
   return (
-    <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {facts.map((f) => (
         <div key={f.label} className="rounded-xl border border-line/80 bg-white/60 p-3">
           <dt className="text-[11px] text-muted">{f.label}</dt>
@@ -154,6 +140,20 @@ function Alternative({ r, rank }: { r: BankRecommendation; rank: number }) {
           <dt className="text-muted">Maturitate</dt>
           <dd className="text-right font-medium text-ink">{r.maturityLabel}</dd>
         </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Dobândă orientativă</dt>
+          <dd className="text-right font-medium text-ink">
+            {num(r.rateRangePct[0])}–{num(r.rateRangePct[1])}% / an
+          </dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Aport minim</dt>
+          <dd className="text-right font-medium text-ink">{r.minOwnLabel}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-muted">Rată lunară estimată</dt>
+          <dd className="text-right font-medium text-ink">{r.monthlyCost > 0 ? `${ron(r.monthlyCost)}` : r.dscrAtProduct === null ? "din facturi" : "—"}</dd>
+        </div>
       </dl>
       <div className="mt-3 border-t border-line pt-3">
         <ReasonLists r={r} compact />
@@ -170,6 +170,18 @@ export function BankRecommendationSection() {
   // Starter: only the top pick; alternatives + the full product table are locked (lib/pricing.ts).
   const { assessment, company } = useAssessment();
   const b = assessment.banks;
+
+  // No bank match on missing real data: the matcher would compare products with an estimated profile.
+  if (!assessment.final.complete) {
+    return (
+      <Card className="mt-5 break-inside-avoid" id="recomandare-banca">
+        <CardHeader icon={<Landmark size={18} />} title="Recomandare bancă & pachet de finanțare (România)" subtitle={`Pentru ${company.name || "firma activă"}`} />
+        <p className="rounded-xl bg-amber-soft px-4 py-3 text-xs font-medium text-amber">
+          Recomandările apar după ce scorul e complet. Lipsesc: {(assessment.final.missing ?? []).join("; ")}.
+        </p>
+      </Card>
+    );
+  }
 
   return (
     <Card className="mt-5 break-inside-avoid" id="recomandare-banca">
@@ -203,13 +215,15 @@ export function BankRecommendationSection() {
           <ChevronDown size={15} className="transition-transform group-open:rotate-180" /> Toate produsele analizate ({b.all.length})
         </summary>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-xs">
+          <table className="w-full min-w-[860px] text-left text-xs">
             <thead className="text-faint">
               <tr>
                 <th className="py-2 pr-3 font-semibold">Bancă / pachet</th>
                 <th className="py-2 pr-3 font-semibold">Tip</th>
                 <th className="py-2 pr-3 text-right font-semibold">Sumă max.</th>
                 <th className="py-2 pr-3 font-semibold">Maturitate</th>
+                <th className="py-2 pr-3 font-semibold">Dobândă / an</th>
+                <th className="py-2 pr-3 text-right font-semibold">Rată / lună</th>
                 <th className="py-2 pr-3 font-semibold">Criterii minime</th>
                 <th className="py-2 text-right font-semibold">Potrivire</th>
               </tr>
@@ -218,12 +232,21 @@ export function BankRecommendationSection() {
               {b.all.map((r) => (
                 <tr key={r.id} className="border-t border-line align-top">
                   <td className="py-2 pr-3">
-                    <p className="font-medium text-ink">{r.bank}</p>
-                    <p className="text-muted">{r.product}</p>
+                    <div className="flex items-start gap-2">
+                      <BankLogo bank={r.bank} size={24} />
+                      <div>
+                        <p className="font-medium text-ink">{r.bank}</p>
+                        <p className="text-muted">{r.product}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="py-2 pr-3">{r.kindLabel}</td>
                   <td className="py-2 pr-3 text-right">{r.maxAmount > 0 ? ron(r.maxAmount) : "—"}</td>
                   <td className="py-2 pr-3">{r.maturityLabel}</td>
+                  <td className="py-2 pr-3">
+                    {num(r.rateRangePct[0])}–{num(r.rateRangePct[1])}%
+                  </td>
+                  <td className="py-2 pr-3 text-right">{r.monthlyCost > 0 ? ron(r.monthlyCost) : "—"}</td>
                   <td className={cx("py-2 pr-3", r.eligible ? "text-emerald-strong" : "text-amber")}>{r.eligible ? "îndeplinite" : "parțial"}</td>
                   <td className="py-2 text-right font-semibold text-ink">{r.matchPct}%</td>
                 </tr>

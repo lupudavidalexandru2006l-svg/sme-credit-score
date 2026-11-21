@@ -192,9 +192,9 @@ export const inputCls =
 export function Disclaimer({ className }: { className?: string }) {
   return (
     <p className={cx("rounded-2xl border border-line/70 px-4 py-3 text-[11px] leading-relaxed text-muted", className)}>
-      <strong className="font-medium text-ink">Ghid de pregătire, nu aprobare bancară.</strong> Scorul „Credit Readiness” este calculat pe date
-      sintetice și pe facturile e-Factura încărcate, cu o formulă publică (vezi „Cum calculăm”). Nu reprezintă o ofertă, o decizie de
-      creditare sau o evaluare de risc a BCR.
+      <strong className="font-medium text-ink">Ghid de pregătire, nu aprobare bancară.</strong> Scorul „Credit Readiness” Afghankingz Credit este calculat pe
+      facturile e-Factura încărcate și pe surse oficiale (ANAF, bilanț, VIES, ONRC, portal.just.ro), cu o formulă publică (vezi „Cum calculăm”). Nu reprezintă o ofertă, o decizie de
+      creditare sau o evaluare de risc a unei bănci.
     </p>
   );
 }

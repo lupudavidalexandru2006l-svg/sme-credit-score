@@ -14,6 +14,7 @@ import { cleanPersonName, findExistingCompany, formatCui, isSameParty, normalize
 import { cleanCaen, GENERAL_SECTOR, sectorForCaen } from "@/lib/data/benchmarks";
 import { newCompanyRecord } from "@/lib/company";
 import type { MultiSourceVerificationReport } from "@/lib/multi-source-verifier";
+import type { AssessmentSnapshot } from "@/lib/history";
 import { DEFAULT_BILLING, DEFAULT_PLAN, isBillingCycle, isPlanTier, type BillingCycle, type PlanTier, type SubscriptionStatus } from "@/lib/pricing";
 
 let client: SupabaseClient | null | undefined;
@@ -49,6 +50,11 @@ interface CompanyRow {
   debts?: Company["debts"] | null;
   official_name?: string | null;
   created_at?: string;
+  // v6 (migration 20261121c_accounts_history.sql) — absent on older databases
+  user_id?: string | null;
+  ceo_cnp_masked?: string | null;
+  ceo_cnp_info?: Company["ceoCnpInfo"] | null;
+  pay_per_use_unlocked?: boolean | null;
 }
 
 interface InvoiceRow {
@@ -72,8 +78,8 @@ interface InvoiceRow {
   raw_xml?: string | null;
 }
 
-const COMPANY_COLUMNS =
-  "id, name, name_key, cui, caen_code, sector, ceo_name, city, county, monthly_fixed_costs, existing_monthly_debt_service, financials_declared, debts, official_name, created_at";
+/** "*" so databases with or without the v6 columns (user_id, ceo_cnp_masked, pay_per_use_unlocked) both work. */
+const COMPANY_COLUMNS = "*";
 const INVOICE_COLUMNS =
   "id, company_id, number, direction, invoice_type_code, issue_date, due_date, supplier_name, supplier_cui, customer_name, customer_cui, tax_exclusive_amount, payable_amount, currency, paid_date, source";
 
@@ -92,6 +98,10 @@ export const companyFromRow = (r: CompanyRow): Company => ({
   debts: Array.isArray(r.debts) ? r.debts : [],
   officialName: r.official_name ?? undefined,
   createdAt: r.created_at,
+  userId: r.user_id ?? null,
+  ceoCnpMasked: r.ceo_cnp_masked ?? undefined,
+  ceoCnpInfo: r.ceo_cnp_info ?? undefined,
+  payPerUseUnlocked: Boolean(r.pay_per_use_unlocked),
 });
 
 export const companyToRow = (c: Company): CompanyRow => ({
@@ -109,6 +119,9 @@ export const companyToRow = (c: Company): CompanyRow => ({
   financials_declared: Boolean(c.financialsDeclared),
   debts: c.debts ?? [],
   official_name: c.officialName ?? null,
+  // v6 columns are written only when set, so older databases keep working without the migration.
+  ...(c.ceoCnpMasked ? { ceo_cnp_masked: c.ceoCnpMasked, ceo_cnp_info: c.ceoCnpInfo ?? null } : {}),
+  ...(c.userId ? { user_id: c.userId } : {}),
 });
 
 export const invoiceFromRow = (r: InvoiceRow): Invoice => ({
@@ -152,10 +165,44 @@ export const invoiceToRow = (inv: Invoice, company: Company, rawXml?: string): I
 
 // ---- Companies --------------------------------------------------------------------
 
-export async function listCompanies(sb: SupabaseClient): Promise<Company[]> {
-  const { data, error } = await sb.from("companies").select(COMPANY_COLUMNS).order("created_at", { ascending: true });
+const missingColumn = (msg: string, col: string) => msg.includes(col) && /column|schema cache/i.test(msg);
+
+/**
+ * Logged-in user: only their companies. Guest mode: only companies that belong to no account
+ * (so guests never see an account's data). Databases without user_id (no v6 migration) list everything.
+ */
+export async function listCompanies(sb: SupabaseClient, userId?: string | null): Promise<Company[]> {
+  const base = () => sb.from("companies").select(COMPANY_COLUMNS).order("created_at", { ascending: true });
+  const { data, error } = await (userId ? base().eq("user_id", userId) : base().is("user_id", null));
+  if (error) {
+    if (!missingColumn(error.message, "user_id")) throw new Error(error.message);
+    const all = await base();
+    if (all.error) throw new Error(all.error.message);
+    return (all.data as CompanyRow[]).map(companyFromRow);
+  }
+  return (data as CompanyRow[]).map(companyFromRow);
+}
+
+/** Every company (admin panel only). */
+export async function listAllCompanies(sb: SupabaseClient): Promise<Company[]> {
+  const { data, error } = await sb.from("companies").select(COMPANY_COLUMNS).order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data as CompanyRow[]).map(companyFromRow);
+}
+
+/** Links guest companies to the account that just signed in (only rows that belong to nobody). */
+export async function claimCompanies(sb: SupabaseClient, userId: string, companyIds: string[]) {
+  const ids = companyIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!ids.length) return 0;
+  const { data, error } = await sb
+    .from("companies")
+    .update({ user_id: userId, updated_at: new Date().toISOString() })
+    .in("id", ids)
+    .is("user_id", null)
+    .select("id");
+  if (error) throw new Error(error.message);
+  await sb.from("assessment_history").update({ user_id: userId }).in("company_id", ids).is("user_id", null);
+  return data?.length ?? 0;
 }
 
 export async function findCompanyById(sb: SupabaseClient, id: string) {
@@ -191,6 +238,11 @@ export interface UpsertCompanyInput {
   sector?: string;
   ceoName: string;
   county?: string;
+  /** Masked CNP + hints (lib/cnp.ts); the raw CNP never reaches the server. */
+  ceoCnpMasked?: string;
+  ceoCnpInfo?: Company["ceoCnpInfo"];
+  /** Owner when the request comes from a signed-in account. */
+  userId?: string | null;
 }
 
 /**
@@ -213,6 +265,10 @@ export async function upsertCompany(sb: SupabaseClient, input: UpsertCompanyInpu
       sector: input.sector && input.sector !== GENERAL_SECTOR ? input.sector : existing.sector || input.sector,
       ceoName: cleanPersonName(input.ceoName) || existing.ceoName,
       county: input.county ?? existing.county,
+      ceoCnpMasked: input.ceoCnpMasked ?? existing.ceoCnpMasked,
+      ceoCnpInfo: input.ceoCnpInfo ?? existing.ceoCnpInfo,
+      // A guest company is claimed by the account that saves it; an account's company never changes owner here.
+      userId: existing.userId ?? input.userId ?? null,
     };
     const { error } = await sb
       .from("companies")
@@ -230,6 +286,9 @@ export async function upsertCompany(sb: SupabaseClient, input: UpsertCompanyInpu
     sector: sectorForCaen(input.caenCode) ?? input.sector ?? GENERAL_SECTOR,
     ceoName: cleanPersonName(input.ceoName),
     county: input.county,
+    ceoCnpMasked: input.ceoCnpMasked,
+    ceoCnpInfo: input.ceoCnpInfo,
+    userId: input.userId ?? null,
   });
   const { data, error } = await sb.from("companies").insert(companyToRow(company)).select(COMPANY_COLUMNS).single();
   if (error) throw new Error(error.message);
@@ -348,6 +407,88 @@ export async function setSubscription(sb: SupabaseClient, company: Company, plan
   const mirror = await sb.from("companies").update({ plan_tier: planTier, billing_cycle: billingCycle, updated_at: updatedAt }).eq("id", company.id);
   if (mirror.error) throw new Error(mirror.error.message);
   return { companyId: company.id, planTier, billingCycle, status: "active", updatedAt };
+}
+
+// ---- Pay-per-use (one complete analysis, 49 RON) -------------------------------------
+
+/** Marks the company as unlocked and counts the purchased credit (mirrored on subscriptions). */
+export async function unlockPayPerUse(sb: SupabaseClient, company: Company) {
+  const updatedAt = new Date().toISOString();
+  const { data: row } = await sb.from("companies").select("purchased_credits").eq("id", company.id).maybeSingle();
+  const credits = Number((row as { purchased_credits?: number } | null)?.purchased_credits ?? 0) + 1;
+  const { error } = await sb.from("companies").update({ pay_per_use_unlocked: true, purchased_credits: credits, updated_at: updatedAt }).eq("id", company.id);
+  if (error) throw new Error(error.message);
+  const sub = await sb
+    .from("subscriptions")
+    .upsert({ company_id: company.id, pay_per_use: true, purchased_credits: credits, updated_at: updatedAt }, { onConflict: "company_id" });
+  if (sub.error) throw new Error(sub.error.message);
+  return { credits, updatedAt };
+}
+
+// ---- Assessment history ----------------------------------------------------------------
+
+interface HistoryRow {
+  id: string;
+  company_id: string;
+  user_id: string | null;
+  final_score: number | string;
+  s_business: number | string;
+  s_uman: number | string;
+  s_investitie: number | string;
+  dscr: number | string | null;
+  dso: number | string;
+  client_concentration: number | string;
+  requested_amount: number | string | null;
+  status: string | null;
+  snapshot_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const numOrNull = (v: number | string | null) => (v === null || v === undefined ? null : Number(v));
+
+export async function listHistory(sb: SupabaseClient, companyId: string): Promise<AssessmentSnapshot[]> {
+  const { data, error } = await sb.from("assessment_history").select("*").eq("company_id", companyId).order("created_at", { ascending: true }).limit(200);
+  if (error) throw new Error(error.message);
+  return (data as HistoryRow[]).map((r) => ({
+    id: r.id,
+    companyId: r.company_id,
+    userId: r.user_id,
+    finalScore: Number(r.final_score),
+    sBusiness: Number(r.s_business),
+    sUman: Number(r.s_uman),
+    sInvestitie: Number(r.s_investitie),
+    dscr: numOrNull(r.dscr),
+    dso: Number(r.dso),
+    clientConcentration: Number(r.client_concentration),
+    requestedAmount: numOrNull(r.requested_amount),
+    status: r.status ?? "",
+    createdAt: r.created_at,
+    snapshot: r.snapshot_json ?? undefined,
+  }));
+}
+
+/** Inserts a snapshot; never updates or deletes older evaluations (same id twice is ignored). */
+export async function insertHistory(sb: SupabaseClient, s: AssessmentSnapshot) {
+  const { error } = await sb.from("assessment_history").upsert(
+    {
+      id: s.id,
+      company_id: s.companyId,
+      user_id: s.userId ?? null,
+      final_score: s.finalScore,
+      s_business: s.sBusiness,
+      s_uman: s.sUman,
+      s_investitie: s.sInvestitie,
+      dscr: s.dscr,
+      dso: s.dso,
+      client_concentration: s.clientConcentration,
+      requested_amount: s.requestedAmount,
+      status: s.status,
+      snapshot_json: s.snapshot ?? {},
+      created_at: s.createdAt,
+    },
+    { onConflict: "id", ignoreDuplicates: true },
+  );
+  if (error) throw new Error(error.message);
 }
 
 // ---- B2B leads ------------------------------------------------------------------------

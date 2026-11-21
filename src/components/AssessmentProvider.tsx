@@ -19,6 +19,11 @@ import { checkPortalJust } from "@/app/actions/checkPortalJust";
 import { scoreRealData, type MultiSourceVerificationReport } from "@/lib/multi-source-verifier";
 import { emptyRealData, withLegal, type CompanyRealData } from "@/lib/real-company-sources";
 import { DEFAULT_BILLING, DEFAULT_PLAN, isBillingCycle, isPlanTier, PLANS, splitUploadsByLimit, type BillingCycle, type PlanTier } from "@/lib/pricing";
+import { applyCnpToLegal, validateCnp } from "@/lib/cnp";
+import { courtCounties } from "@/lib/scoringEngine";
+import { mergeHistory, snapshotFromAssessment, type AssessmentSnapshot } from "@/lib/history";
+import { apiFetch } from "@/lib/auth/client";
+import { useAuth } from "./AuthProvider";
 
 export const EMPTY_QUIZ: QuizAnswers = {
   revenueEstimate: null,
@@ -30,7 +35,7 @@ export const EMPTY_QUIZ: QuizAnswers = {
 export const EMPTY_INVESTMENT: InvestmentInput = { purpose: null, ownContributionPct: null, requestedAmount: null };
 
 /** Shown while no company exists yet: every step renders its empty state instead of another company's data. */
-export const BLANK_COMPANY: Company = newCompanyRecord({ id: "", name: "", cui: "", caenCode: "", ceoName: "", createdAt: "" });
+export const BLANK_COMPANY: Company = { id: "", name: "", cui: "", caenCode: "", ceoName: "", city: "", monthlyFixedCosts: 0, existingMonthlyDebtService: 0, financialsDeclared: false, debts: [] };
 
 export type StepId = "onboarding" | "analiza" | "investitie" | "profil";
 
@@ -53,6 +58,11 @@ export interface CompanyDraft {
   county?: string;
   /** GDPR: the administrator agreed to be searched by name in public court records. */
   nameSearchConsent?: boolean;
+  /**
+   * Administrator CNP as typed (optional). Validated on save; only the masked form ("1900101******")
+   * and the derived birth date / county are kept. "" = remove the stored CNP; undefined = keep it.
+   */
+  ceoCnp?: string;
 }
 
 export interface SaveCompanyResult {
@@ -77,6 +87,8 @@ interface Workspace {
   doneActions?: string[];
   /** Complete final scores over time (one point per day). */
   history?: { date: string; score: number }[];
+  /** Every saved evaluation (also in public.assessment_history when Supabase is configured). */
+  snapshots?: AssessmentSnapshot[];
 }
 
 const EMPTY_WORKSPACE: Workspace = { uploads: [], quiz: EMPTY_QUIZ, investment: EMPTY_INVESTMENT, legal: null, official: null, visited: [] };
@@ -203,6 +215,15 @@ interface Ctx {
   upgradePrompt: string | null;
   showUpgrade: (reason: string) => void;
   closeUpgrade: () => void;
+  /** The active company bought a one-off pay-per-use analysis (unlocks it on any plan). */
+  payPerUse: boolean;
+  unlockPayPerUse: () => Promise<string>;
+  /** Saved evaluations of the active company, oldest first (local + Supabase). */
+  snapshots: AssessmentSnapshot[];
+  /** Today (YYYY-MM-DD), read once after hydration ("" during prerender). */
+  today: string;
+  /** Saves the current COMPLETE assessment as a new snapshot (never overwrites older ones). */
+  saveSnapshot: () => Promise<{ ok: boolean; message: string }>;
 }
 
 const AssessmentContext = createContext<Ctx | null>(null);
@@ -234,15 +255,27 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const [lastUploadResults, setLastUploadResults] = useState<ParseResult[]>([]);
   const [persistMessage, setPersistMessage] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  /** Today, read once after hydration (never during render / prerender). */
+  const [today, setToday] = useState("");
   const [plans, setPlans] = useState<Record<string, ActivePlan>>({});
   const [upgradePrompt, setUpgradePrompt] = useState<string | null>(null);
+  /** assessment_history rows from Supabase per company id. */
+  const [remoteHistory, setRemoteHistory] = useState<Record<string, AssessmentSnapshot[]>>({});
   const autoChecked = useRef(new Set<string>());
+  const { session } = useAuth();
+  const accountId = session?.user.id ?? null;
 
   const company = useMemo(() => companies.find((c) => c.id === activeId) ?? companies[0] ?? BLANK_COMPANY, [companies, activeId]);
+  const companiesRef = useRef<Company[]>([]);
+  useEffect(() => {
+    companiesRef.current = companies;
+  }, [companies]);
   const ws = workspaces[company.id] ?? EMPTY_WORKSPACE;
-  const { uploads, quiz, investment, legal, visited } = ws;
+  const { uploads, quiz, investment, visited } = ws;
+  // The validated CNP (masked + birth date / county) excludes impossible namesakes from the administrator's cases.
+  const legal = useMemo(() => applyCnpToLegal(ws.legal, company.ceoCnpInfo && company.ceoCnpMasked ? { ...company.ceoCnpInfo, masked: company.ceoCnpMasked } : null, rescoreLegal, courtCounties), [ws.legal, company.ceoCnpInfo, company.ceoCnpMasked]);
   // The real sources of the ACTIVE company only; the portal.just.ro parts follow the current legal result.
-  const official = useMemo(() => withLegal(ws.official ?? emptyRealData(company.cui), legal), [ws.official, company.cui, legal]);
+  const official = useMemo(() => withLegal(ws.official ?? emptyRealData(company.cui, ""), legal), [ws.official, company.cui, legal]);
   const verification = useMemo(
     () => scoreRealData(official, legal, { companyId: company.id, companyName: company.officialName || company.name, ceoName: company.ceoName }),
     [official, legal, company.id, company.officialName, company.name, company.ceoName],
@@ -252,6 +285,8 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const history = useMemo(() => ws.history ?? [], [ws.history]);
   const supabaseLive = Boolean(supabase?.configured && !supabase.error);
   const plan = plans[company.id] ?? DEFAULT_ACTIVE_PLAN;
+  const payPerUse = Boolean(company.payPerUseUnlocked);
+  const snapshots = useMemo(() => mergeHistory(ws.snapshots ?? [], remoteHistory[company.id] ?? []), [ws.snapshots, remoteHistory, company.id]);
 
   const remoteInvoices = remote[company.id];
   const dataset: Dataset = useMemo(
@@ -260,7 +295,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   );
   // Only the ACTIVE company's invoices: those stored in Supabase + the XML uploaded for it. Nothing generated.
   const invoices = useMemo(() => mergeInvoices(dataset.invoices, uploads), [dataset.invoices, uploads]);
-  const assessment = useMemo(() => computeAssessment({ company, invoices, quiz, investment, legal, verification }), [company, invoices, quiz, investment, legal, verification]);
+  const assessment = useMemo(() => computeAssessment({ company, invoices, quiz, investment, legal, verification, today }), [company, invoices, quiz, investment, legal, verification, today]);
 
   const updateWorkspace = useCallback((id: string, fn: (w: Workspace) => Workspace) => {
     setWorkspaces((all) => ({ ...all, [id]: fn(all[id] ?? EMPTY_WORKSPACE) }));
@@ -276,24 +311,64 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       setActiveId(saved.companies.some((c) => c.id === saved.activeId) ? saved.activeId : (saved.companies[0]?.id ?? ""));
     }
     setPlans(readPlans());
+    setToday(new Date().toISOString().slice(0, 10));
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
 
-    fetch("/api/companies")
-      .then((r) => r.json())
-      .then((d: { supabase: { configured: boolean; error?: string }; companies: Company[] }) => {
+  // --- Company list from Supabase: the account's companies when signed in, guest companies otherwise.
+  // On sign-in, companies created in guest mode in this browser are linked to the account first.
+  const claimed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    const load = async () => {
+      if (accountId && claimed.current !== accountId) {
+        claimed.current = accountId;
+        const ids = companiesRef.current.map((c) => c.id).filter(Boolean);
+        if (ids.length) await apiFetch("/api/account/claim", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyIds: ids }) }).catch(() => undefined);
+      }
+      const d = (await apiFetch("/api/companies").then((r) => r.json())) as { supabase: { configured: boolean; error?: string }; companies: Company[] };
+      if (cancelled) return;
         setSupabase(d.supabase);
         if (!d.supabase.configured || d.supabase.error || !d.companies.length) return;
         // Supabase is the source of truth for saved companies; companies only known locally are kept.
         setCompanies((local) => {
           const byId = new Map(local.map((c) => [c.id, c]));
-          for (const c of d.companies) if (c.id !== LEGACY_DEMO_ID) byId.set(c.id, { ...byId.get(c.id), ...c });
+          for (const c of d.companies) {
+            if (c.id === LEGACY_DEMO_ID) continue;
+            const prev = byId.get(c.id);
+            // Databases without the v6 columns return no CNP / pay-per-use: keep what this browser knows.
+            byId.set(c.id, {
+              ...prev,
+              ...c,
+              payPerUseUnlocked: Boolean(prev?.payPerUseUnlocked || c.payPerUseUnlocked),
+              ceoCnpMasked: c.ceoCnpMasked ?? prev?.ceoCnpMasked,
+              ceoCnpInfo: c.ceoCnpInfo ?? prev?.ceoCnpInfo,
+            });
+          }
           return [...byId.values()];
         });
         setActiveId((id) => id || (d.companies.find((c) => c.id !== LEGACY_DEMO_ID)?.id ?? ""));
-      })
-      .catch(() => setSupabase({ configured: false, error: "API indisponibil" }));
-  }, []);
+    };
+    load().catch(() => !cancelled && setSupabase({ configured: false, error: "API indisponibil" }));
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated, accountId]);
+
+  // --- Saved evaluations of the active company from Supabase (assessment_history).
+  useEffect(() => {
+    if (!supabaseLive || !activeId || remoteHistory[activeId] !== undefined) return;
+    let cancelled = false;
+    apiFetch(`/api/history?companyId=${encodeURIComponent(activeId)}`)
+      .then((r) => r.json())
+      .then((d: { ok: boolean; history?: AssessmentSnapshot[] }) => !cancelled && setRemoteHistory((all) => ({ ...all, [activeId]: d.ok ? (d.history ?? []) : [] })))
+      .catch(() => !cancelled && setRemoteHistory((all) => ({ ...all, [activeId]: [] })));
+    return () => {
+      cancelled = true;
+    };
+  }, [supabaseLive, activeId, remoteHistory]);
 
   // --- Load the active company's invoices from Supabase (filtered by company_id) --------
   useEffect(() => {
@@ -400,6 +475,17 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       const caenCode = cleanCaen(draft.caenCode);
       const sector = sectorForCaen(caenCode) ?? (draft.sector || GENERAL_SECTOR);
       const cui = formatCui(draft.cui);
+      // CNP: validated here, then only the masked form + hints are kept (the raw value is dropped).
+      let cnpPatch: Pick<Company, "ceoCnpMasked" | "ceoCnpInfo"> | null = null;
+      if (draft.ceoCnp !== undefined) {
+        if (draft.ceoCnp.trim() === "") cnpPatch = { ceoCnpMasked: undefined, ceoCnpInfo: undefined };
+        else {
+          const v = validateCnp(draft.ceoCnp);
+          if (!v.valid) return { ok: false, message: `CNP invalid: ${v.error}` };
+          cnpPatch = { ceoCnpMasked: v.info.masked, ceoCnpInfo: { birthDate: v.info.birthDate, sex: v.info.sex, countyCode: v.info.countyCode, county: v.info.county } };
+        }
+      }
+      const withCnp = (c: Company): Company => (cnpPatch ? { ...c, ...cnpPatch } : c);
 
       const activate = (c: Company, created: boolean, extra = "") => {
         setCompanies((list) => (list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? { ...x, ...c } : x)) : [...list, c]));
@@ -420,10 +506,10 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
 
       if (supabaseLive) {
         try {
-          const r = await fetch("/api/companies", {
+          const r = await apiFetch("/api/companies", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent }),
+            body: JSON.stringify({ name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent, ...(cnpPatch ? { ceoCnpMasked: cnpPatch.ceoCnpMasked ?? null, ceoCnpInfo: cnpPatch.ceoCnpInfo ?? null } : {}) }),
           }).then((x) => x.json() as Promise<{ ok: boolean; company?: Company; created?: boolean; seeded?: number; error?: string }>);
           if (r.ok && r.company) {
             setRemote((all) => {
@@ -431,7 +517,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
               delete next[r.company!.id]; // force a fresh load of its invoices
               return next;
             });
-            return activate({ ...r.company, nameSearchConsent: draft.nameSearchConsent ?? r.company.nameSearchConsent }, Boolean(r.created), " Salvat în Supabase.");
+            return activate(withCnp({ ...r.company, nameSearchConsent: draft.nameSearchConsent ?? r.company.nameSearchConsent }), Boolean(r.created), " Salvat în Supabase.");
           }
           // Supabase failed: fall through to local mode so the form never blocks.
           const local = saveLocal();
@@ -449,7 +535,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
           // An untouched "General IMM" default from the blank form must not overwrite a sector chosen earlier.
           const keptSector = sectorForCaen(caenCode) ?? (sector !== GENERAL_SECTOR ? sector : (existing.sector ?? sector));
           return activate(
-            {
+            withCnp({
               ...existing,
               cui: cui || existing.cui,
               caenCode: caenCode || existing.caenCode,
@@ -457,11 +543,11 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
               ceoName,
               county: draft.county ?? existing.county,
               nameSearchConsent: draft.nameSearchConsent ?? existing.nameSearchConsent,
-            },
+            }),
             false,
           );
         }
-        return activate(newCompanyRecord({ id: newId(), name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent }), true);
+        return activate(withCnp(newCompanyRecord({ id: newId(), name, cui, caenCode, sector, ceoName, county: draft.county, nameSearchConsent: draft.nameSearchConsent })), true);
       }
     },
     [companies, supabaseLive, switchCompany],
@@ -574,6 +660,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       autoChecked.current.add(company.id);
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- starts the external requests (ANAF, bilanț, VIES, portal.just.ro) once per company
     void refreshCompanyData(company);
   }, [hydrated, company, legal, ws.official, refreshCompanyData]);
 
@@ -583,6 +670,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated || !company.id || !finalComplete) return;
     const date = new Date().toISOString().slice(0, 10);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- records a derived snapshot; returns the same object when nothing changed
     updateWorkspace(company.id, (w) => {
       const h = w.history ?? [];
       const last = h[h.length - 1];
@@ -600,7 +688,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       // Plan limit on XML uploads per company (re-uploading an invoice already counted is free).
       const known = new Set(uploads.map((u) => u.id));
       const fresh = valid.filter((r) => !known.has(r.invoice!.id));
-      const { rejected } = splitUploadsByLimit(plan.planTier, uploads.length, fresh);
+      const { rejected } = splitUploadsByLimit(plan.planTier, uploads.length, fresh, payPerUse);
       if (rejected.length > 0) {
         const limit = PLANS[plan.planTier].limits.maxXmlUploads;
         const msg = `Limita planului ${PLANS[plan.planTier].name}: maximum ${limit} facturi XML pe firmă. Deblochează upload nelimitat cu Planul Pro.`;
@@ -613,7 +701,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
 
       const nextUploads = mergeInvoices(uploads, parsed);
       const before = assessment.final.finalScore;
-      const after = computeAssessment({ company: target, invoices: mergeInvoices(dataset.invoices, nextUploads), quiz, investment, legal, verification }).final.finalScore;
+      const after = computeAssessment({ company: target, invoices: mergeInvoices(dataset.invoices, nextUploads), quiz, investment, legal, verification, today }).final.finalScore;
       updateWorkspace(target.id, (w) => ({ ...w, uploads: mergeInvoices(w.uploads, parsed) }));
       const first = parsed[0];
       showToast(
@@ -626,7 +714,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       );
 
       const rawXml = Object.fromEntries(results.filter((r) => r.ok && r.invoice).map((r) => [r.invoice!.id, files.find((f) => f.name === r.fileName)?.xml ?? ""]));
-      fetch("/api/invoices", {
+      apiFetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company: target, invoices: parsed, rawXml }),
@@ -638,20 +726,56 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
         .catch(() => setPersistMessage("Nesalvat: API indisponibil (facturile rămân în browser, pe firma activă)."));
       return results;
     },
-    [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads, verification, plan.planTier],
+    [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads, verification, plan.planTier, today, payPerUse],
   );
+
+  /** Simulated checkout of one complete analysis (49 RON) for the ACTIVE company. */
+  const unlockPayPerUse = useCallback(async () => {
+    const target = company;
+    if (!target.id) return "Salvează întâi firma în Pasul 1.";
+    setCompanies((list) => list.map((c) => (c.id === target.id ? { ...c, payPerUseUnlocked: true } : c)));
+    setUpgradePrompt(null);
+    try {
+      const r = (await apiFetch("/api/pay-per-use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: target }) }).then((x) => x.json())) as {
+        ok: boolean;
+        mode?: string;
+        error?: string;
+      };
+      return r.mode === "local" ? `Analiza completă pentru ${target.name} este deblocată (salvat în browser${r.error ? `; Supabase: ${r.error}` : ""}).` : `Analiza completă pentru ${target.name} este deblocată și salvată în Supabase.`;
+    } catch {
+      return `Analiza completă pentru ${target.name} este deblocată în acest browser (API indisponibil).`;
+    }
+  }, [company]);
+
+  const saveSnapshot = useCallback(async () => {
+    if (!company.id) return { ok: false, message: "Salvează întâi firma în Pasul 1." };
+    if (!assessment.final.complete) return { ok: false, message: "Istoricul păstrează doar evaluări complete (cu date reale). Completează datele lipsă." };
+    const snap = snapshotFromAssessment(assessment, company.id, investment, newId(), new Date().toISOString(), accountId);
+    updateWorkspace(company.id, (w) => ({ ...w, snapshots: [...(w.snapshots ?? []), snap].slice(-100) }));
+    if (!supabaseLive) return { ok: true, message: `Evaluarea #${snapshots.length + 1} a fost salvată în istoricul din browser.` };
+    try {
+      const r = (await apiFetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, snapshot: snap }) }).then((x) => x.json())) as {
+        ok: boolean;
+        persisted?: boolean;
+        error?: string;
+      };
+      return r.persisted ? { ok: true, message: `Evaluarea #${snapshots.length + 1} a fost salvată în assessment_history (Supabase).` } : { ok: true, message: `Salvată în browser; Supabase: ${r.error ?? "nesalvat"}.` };
+    } catch {
+      return { ok: true, message: "Salvată în browser (API indisponibil)." };
+    }
+  }, [company, assessment, investment, accountId, supabaseLive, snapshots.length, updateWorkspace]);
 
   const resetUploads = useCallback(() => {
     if (uploads.length === 0) return;
     const before = assessment.final.finalScore;
-    const after = computeAssessment({ company, invoices: dataset.invoices.filter((i) => i.source !== "xml-upload"), quiz, investment, legal, verification }).final.finalScore;
+    const after = computeAssessment({ company, invoices: dataset.invoices.filter((i) => i.source !== "xml-upload"), quiz, investment, legal, verification, today }).final.finalScore;
     updateWorkspace(company.id, (w) => ({ ...w, uploads: [] }));
     setRemote((all) => (all[company.id] ? { ...all, [company.id]: all[company.id]!.filter((i) => i.source !== "xml-upload") } : all));
     setLastUploadResults([]);
     setPersistMessage(null);
     showToast(before, after, "Facturi încărcate eliminate", `Doar pentru ${company.name}; celelalte firme rămân neatinse.`);
     void fetch(`/api/invoices?companyId=${encodeURIComponent(company.id)}`, { method: "DELETE" }).catch(() => undefined);
-  }, [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads.length, verification]);
+  }, [assessment.final.finalScore, company, dataset.invoices, investment, legal, quiz, showToast, updateWorkspace, uploads.length, verification, today]);
 
   /** Resets the evaluation of the ACTIVE company (answers, uploads, legal check). Companies are never deleted. */
   const resetAll = useCallback(() => {
@@ -706,6 +830,11 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     upgradePrompt,
     showUpgrade,
     closeUpgrade,
+    payPerUse,
+    unlockPayPerUse,
+    snapshots,
+    saveSnapshot,
+    today,
   };
 
   return <AssessmentContext.Provider value={value}>{children}</AssessmentContext.Provider>;

@@ -48,6 +48,13 @@ export interface AssessmentInput {
    * S_Uman = 0.5·Quiz + 0.5·ScorVerificariExterne instead of 0.5·Quiz + 0.5·ScorPortalJust.
    */
   verification?: MultiSourceVerificationReport | null;
+  /** ISO date for the empty-invoice window (see computeMetrics); omitted on the server. */
+  today?: string;
+  /**
+   * What-If only (components/WhatIfSimulator.tsx): replaces indicators (e.g. DSO, client concentration)
+   * for S_Business, the sector benchmark and the bank matcher. The quiz is always checked against the REAL metrics.
+   */
+  metricsOverride?: Partial<Pick<BusinessMetrics, "dsoDays" | "topClientSharePct">>;
 }
 
 export interface Assessment {
@@ -73,9 +80,10 @@ export function computeAssessment(input: AssessmentInput): Assessment {
   // Existing installments: the CRC / Biroul de Credit lines when declared, otherwise the declared total.
   const company = { ...input.company, existingMonthlyDebtService: effectiveDebtService(input.company) };
   input = { ...input, company };
-  const metrics = computeMetrics(input.invoices, company);
+  const realMetrics = computeMetrics(input.invoices, company, input.today);
+  const metrics: BusinessMetrics = input.metricsOverride ? { ...realMetrics, ...input.metricsOverride } : realMetrics;
   const business = computeBusinessScore(metrics, company, input.investment.requestedAmount, input.investment.termMonths ?? LOAN_MONTHS);
-  const quiz = evaluateFinancialQuiz(input.quiz, quizTruthFromMetrics(metrics));
+  const quiz = evaluateFinancialQuiz(input.quiz, quizTruthFromMetrics(realMetrics));
   const investment = evaluateInvestment(input.investment, metrics.annualizedRevenue);
   const { sector, source: sectorSource } = resolveSector(input.company);
   const benchmark = computeBenchmark(metrics, sector);

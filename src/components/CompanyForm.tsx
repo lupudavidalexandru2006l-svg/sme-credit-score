@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, CircleAlert, CircleCheck, LoaderCircle, Plus, Save } from "lucide-react";
+import { Building2, CircleAlert, CircleCheck, Fingerprint, LoaderCircle, Plus, Save, ShieldCheck } from "lucide-react";
+import { cleanCnp, validateCnp } from "@/lib/cnp";
 import { caenWarning, cuiWarning } from "@/lib/company";
 import { cleanCaen, findSector, GENERAL_SECTOR, SECTOR_BENCHMARKS, sectorForCaen } from "@/lib/data/benchmarks";
 import { companyCounty, COUNTIES } from "@/lib/scoringEngine";
@@ -57,6 +58,9 @@ export function CompanyForm() {
   };
   const caen = cleanCaen(draft.caenCode);
   const mapped = sectorForCaen(draft.caenCode);
+  const cnpTyped = draft.ceoCnp !== undefined && draft.ceoCnp.trim() !== "";
+  const cnpCheck = cnpTyped ? validateCnp(draft.ceoCnp ?? "") : null;
+  const cnpInvalid = Boolean(cnpCheck && !cnpCheck.valid);
   const nameMissing = !draft.name.trim();
   const ceoMissing = !draft.ceoName.trim();
   const dirty =
@@ -67,22 +71,27 @@ export function CompanyForm() {
     caen !== company.caenCode ||
     (draft.county ?? "") !== (companyCounty(company) ?? "") ||
     Boolean(draft.nameSearchConsent) !== Boolean(company.nameSearchConsent) ||
+    draft.ceoCnp !== undefined ||
     (!mapped && draft.sector !== (company.sector ?? GENERAL_SECTOR));
 
   // The unsaved form is shared with "Continuă": going to step 2 saves it first, so step 2 never shows another company.
   useEffect(() => {
-    setPendingDraft(dirty && !nameMissing && !ceoMissing ? draft : null);
-  }, [dirty, nameMissing, ceoMissing, draft, setPendingDraft]);
+    setPendingDraft(dirty && !nameMissing && !ceoMissing && !cnpInvalid ? draft : null);
+  }, [dirty, nameMissing, ceoMissing, cnpInvalid, draft, setPendingDraft]);
   useEffect(() => () => setPendingDraft(null), [setPendingDraft]);
 
   const submit = async () => {
     setTouched(true);
-    if (nameMissing || ceoMissing) return;
+    if (nameMissing || ceoMissing || cnpInvalid) return;
     setBusy(true);
     try {
       const r = await saveCompany(draft);
       setResult(r);
-      if (r.ok) setIsNew(false);
+      if (r.ok) {
+        setIsNew(false);
+        // The raw CNP leaves the form as soon as it is saved: only the masked value stays.
+        setDraft((d) => ({ ...d, ceoCnp: undefined }));
+      }
     } finally {
       setBusy(false);
     }
@@ -156,6 +165,55 @@ export function CompanyForm() {
             <input className={inputCls} value={draft.caenCode} inputMode="numeric" placeholder="ex. 5610" onChange={(e) => set({ caenCode: e.target.value })} />
           </Field>
         </div>
+        <div className="rounded-xl border border-line p-3.5">
+          <Field
+            label={
+              <span className="flex items-center gap-1.5">
+                <Fingerprint size={13} /> CNP Administrator / CEO <span className="text-faint">(opțional)</span>
+              </span>
+            }
+            hint={
+              cnpCheck ? (
+                cnpCheck.valid ? (
+                  <span className="text-emerald-strong">
+                    Valid · {cnpCheck.info.masked} · născut(ă) {new Date(cnpCheck.info.birthDate).toLocaleDateString("ro-RO")} · județ {cnpCheck.info.county}
+                    {cnpCheck.info.sex ? ` · ${cnpCheck.info.sex}` : ""}
+                  </span>
+                ) : (
+                  <span className="text-red">{cnpCheck.error}</span>
+                )
+              ) : company.ceoCnpMasked && !isNew ? (
+                <span>
+                  Salvat mascat: <strong className="font-mono">{company.ceoCnpMasked}</strong>. Lasă gol ca să-l păstrezi
+                  {" · "}
+                  <button type="button" className="underline hover:text-ink" onClick={() => set({ ceoCnp: "" })}>
+                    șterge CNP-ul
+                  </button>
+                </span>
+              ) : draft.ceoCnp === "" && company.ceoCnpMasked ? (
+                <span className="text-amber">CNP-ul salvat va fi șters la salvare.</span>
+              ) : (
+                "Folosit doar pentru a deosebi omonimii la verificarea administratorului (vârstă la data dosarului, județ)."
+              )
+            }
+          >
+            <input
+              className={cx(inputCls, "font-mono tracking-wider", cnpInvalid && "border-red/60")}
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={13}
+              value={draft.ceoCnp ?? ""}
+              placeholder={company.ceoCnpMasked && !isNew ? company.ceoCnpMasked : "13 cifre"}
+              onChange={(e) => set({ ceoCnp: cleanCnp(e.target.value).slice(0, 13) })}
+            />
+          </Field>
+          <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-emerald-soft/60 px-2.5 py-1.5 text-[11px] leading-relaxed text-emerald-strong">
+            <ShieldCheck size={13} className="mt-0.5 shrink-0" />
+            <span>
+              GDPR: CNP-ul este validat matematic (cheia 279146358279) și mascat — afișat doar ca <span className="font-mono">1900101******</span> în rapoarte. Valoarea completă nu se salvează și nu se trimite nicăieri.
+            </span>
+          </p>
+        </div>
         <label className="flex items-start gap-2.5 rounded-xl border border-line bg-canvas px-3.5 py-3 text-xs leading-relaxed text-muted">
           <input
             type="checkbox"
@@ -174,7 +232,7 @@ export function CompanyForm() {
             <span className="text-faint">mapat automat din CAEN {caen}</span>
           </p>
         ) : (
-          <Field label="Sector de activitate" hint="Folosit în S_Investiție pentru comparația cu industria (benchmark p25 / mediană / p75).">
+          <Field label="Sector de activitate" hint="Folosit în S_Investiție pentru comparația cu industria (valori de referință orientative p25 / mediană / p75, nu statistici oficiale).">
             <select className={inputCls} value={draft.sector} onChange={(e) => set({ sector: e.target.value })}>
               {SECTOR_BENCHMARKS.map((s) => (
                 <option key={s.caenCode} value={s.caenCode}>
@@ -186,7 +244,7 @@ export function CompanyForm() {
         )}
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button type="submit" disabled={busy || (!dirty && !isNew)}>
+          <Button type="submit" disabled={busy || cnpInvalid || (!dirty && !isNew)}>
             {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
             {isNew ? "Salvează și analizează firma" : dirty ? "Salvează modificările" : "Firmă salvată"}
           </Button>

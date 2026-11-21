@@ -97,3 +97,21 @@ test("consultant layer: no conclusion and no sustainable amount without real inp
   assert.ok(documentsFor(input).some((d) => d.id === "oferte"));
   assert.ok(financingInstruments(a, input).some((i) => i.id === "leasing"));
 });
+
+test("consultant layer on a complete fixture profile: sustainable amount, questions and conclusion", async () => {
+  const { consultantConclusion, sustainableAmount, bankQuestions } = await import("./consultant.ts");
+  const { syntheticDataset: ds } = await import("./data/test-fixtures.ts");
+  const d = ds();
+  const investment = { purpose: "growth" as const, ownContributionPct: 15, requestedAmount: 900_000, termMonths: 60 };
+  const quiz = { revenueEstimate: 2_000_000, paymentTerm: "30" as const, topClientShare: "15-30" as const, mainSupplier: null, hasSignificantCreditNotes: false };
+  const legal = { query: { companyName: d.company.name, ceoName: "" }, source: "portal.just.ro" as const, isFallback: false, cases: [], totalFound: 0, excludedCount: 0, criticalCount: 0, totalDeduction: 0, minorCapApplied: false, legalScore: 100, integrityKillSwitch: false, message: "", checkedAt: "2026-11-01T00:00:00Z" };
+  const a = computeAssessment({ company: d.company, invoices: d.invoices, quiz, investment, legal });
+  const input = { company: d.company, investment, legal, bilant: [], ageMonths: 60 };
+  assert.equal(a.final.complete, true);
+  const max = sustainableAmount(a, input);
+  assert.ok(max > 0 && max % 1000 === 0);
+  assert.ok(bankQuestions(a, input).length >= 1);
+  const c = consultantConclusion(a, input);
+  assert.equal(c.ready, true);
+  assert.match(c.text, /Scor/);
+});

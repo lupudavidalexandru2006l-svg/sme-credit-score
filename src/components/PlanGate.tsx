@@ -5,14 +5,14 @@ import type { ReactNode } from "react";
 import { Lock, Repeat, Sparkles, X } from "lucide-react";
 import { useAssessment } from "./AssessmentProvider";
 import { cx } from "./ui";
-import { canPerformAction, PLAN_TIERS, planBadgeLabel, PLANS, type Feature } from "@/lib/pricing";
+import { canPerformAction, PAY_PER_USE, PLAN_TIERS, planBadgeLabel, PLANS, type Feature } from "@/lib/pricing";
 
 export const UNLOCK_LABEL = `Deblochează cu Planul Pro (${PLANS.pro.price.monthly} RON/lună)`;
 
 /** True when the active company's plan includes the feature. */
 export function useCan(feature: Feature) {
-  const { plan } = useAssessment();
-  return canPerformAction(plan.planTier, feature);
+  const { plan, payPerUse } = useAssessment();
+  return canPerformAction(plan.planTier, feature, payPerUse);
 }
 
 /** Content blurred behind a subtle overlay with an unlock button, unless the plan includes `feature`. */
@@ -33,6 +33,9 @@ export function LockedGate({ feature, title, children, className }: { feature: F
           <Link href="/pricing" className="inline-flex items-center gap-2 rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-white hover:bg-navy-2">
             <Sparkles size={14} /> {UNLOCK_LABEL}
           </Link>
+          <Link href="/pricing#pay-per-use" className="text-xs text-muted underline-offset-2 hover:text-ink hover:underline">
+            sau o singură analiză: Pay-Per-Use {PAY_PER_USE.price} RON
+          </Link>
         </div>
       </div>
     </div>
@@ -41,7 +44,7 @@ export function LockedGate({ feature, title, children, className }: { feature: F
 
 /** "Plan: PRO" badge + a discreet demo switch that cycles Starter → Pro → Business. */
 export function PlanBadge() {
-  const { plan, setPlan } = useAssessment();
+  const { plan, setPlan, payPerUse } = useAssessment();
   const next = PLAN_TIERS[(PLAN_TIERS.indexOf(plan.planTier) + 1) % PLAN_TIERS.length];
   return (
     <div className="flex items-center gap-1 rounded-full border border-line bg-white/80 py-1 pl-1 pr-1">
@@ -54,6 +57,7 @@ export function PlanBadge() {
         title="Vezi planurile"
       >
         {planBadgeLabel(plan.planTier)}
+        {payPerUse && plan.planTier === "starter" && " + PAY-PER-USE"}
       </Link>
       <button
         type="button"
@@ -69,7 +73,7 @@ export function PlanBadge() {
 
 /** Upgrade prompt opened by a blocked action (e.g. the 4th XML invoice on Starter). */
 export function UpgradePrompt() {
-  const { upgradePrompt, closeUpgrade, setPlan } = useAssessment();
+  const { upgradePrompt, closeUpgrade, setPlan, unlockPayPerUse } = useAssessment();
   if (!upgradePrompt) return null;
   return (
     <div className="no-print fixed inset-0 z-50 grid place-items-center bg-navy/30 p-4 backdrop-blur-sm" onClick={closeUpgrade}>
@@ -87,6 +91,13 @@ export function UpgradePrompt() {
         <div className="mt-6 flex flex-col gap-2">
           <button type="button" onClick={() => setPlan("pro")} className="rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-white hover:bg-navy-2">
             Activează Pro — Mod Demo ({PLANS.pro.price.monthly} RON/lună)
+          </button>
+          <button
+            type="button"
+            onClick={() => void unlockPayPerUse()}
+            className="rounded-full border border-line px-5 py-2.5 text-sm font-medium text-ink hover:border-line-strong"
+          >
+            Doar această analiză — Pay-Per-Use {PAY_PER_USE.price} RON (Mod Demo)
           </button>
           <Link href="/pricing" onClick={closeUpgrade} className="rounded-full px-5 py-2.5 text-center text-sm text-muted hover:bg-canvas hover:text-ink">
             Compară planurile

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui";
 
 export const metadata: Metadata = {
-  title: "Politica de confidențialitate — Credit Ready",
-  description: "Ce date prelucrează Credit Ready, din ce surse, unde sunt păstrate și ce drepturi ai conform GDPR.",
+  title: "Politica de confidențialitate",
+  description: "Ce date prelucrează Afghankingz Credit, din ce surse, unde sunt păstrate și ce drepturi ai conform GDPR.",
 };
 
 const SECTIONS: { title: string; body: string[] }[] = [

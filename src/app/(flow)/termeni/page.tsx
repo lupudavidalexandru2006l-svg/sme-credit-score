@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { Card } from "@/components/ui";
 
 export const metadata: Metadata = {
-  title: "Termeni și condiții — Credit Ready",
-  description: "Condițiile de utilizare ale platformei Credit Ready.",
+  title: "Termeni și condiții",
+  description: "Condițiile de utilizare ale platformei Afghankingz Credit.",
 };
 
 const TERMS: { title: string; body: string }[] = [
   {
-    title: "Ce este Credit Ready",
+    title: "Ce este Afghankingz Credit",
     body: "Un instrument de pregătire pentru finanțare: calculează un profil Credit Ready din datele reale ale firmei (facturi e-Factura, surse publice oficiale, date declarate) și propune un plan de acțiune. Nu este o ofertă de credit, o aprobare sau o consultanță financiară autorizată.",
   },
   {

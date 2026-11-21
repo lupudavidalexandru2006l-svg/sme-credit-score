@@ -1,5 +1,5 @@
 /**
- * Credit Ready — pricing, plan limits and feature gating. The ONE place to change a price or a limit.
+ * Afghankingz Credit — pricing, plan limits and feature gating. The ONE place to change a price or a limit.
  *
  * Pure module (no React / Next / I/O): used by the API routes, the provider and `node --test`.
  * Prices are in RON, VAT-exclusive; `yearly` is the monthly equivalent when billed annually (−20%).
@@ -11,6 +11,8 @@ export type SubscriptionStatus = "active" | "trialing" | "canceled";
 
 export const PLAN_TIERS: PlanTier[] = ["starter", "pro", "business"];
 export const BILLING_CYCLES: BillingCycle[] = ["monthly", "yearly"];
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Romanian standard VAT rate (from 1 August 2025). */
 export const VAT_RATE = 0.21;
@@ -32,7 +34,9 @@ export type Feature =
   | "exportPdf"
   | "riskAlerts"
   | "spvSync"
-  | "prioritySupport";
+  | "prioritySupport"
+  | "whatIfSimulator"
+  | "stressTest";
 
 export interface PlanLimits {
   /** Companies (SRL) kept in the profile. `null` = unlimited. */
@@ -75,6 +79,8 @@ const NONE: Record<Feature, boolean> = {
   riskAlerts: false,
   spvSync: false,
   prioritySupport: false,
+  whatIfSimulator: false,
+  stressTest: false,
 };
 
 const PRO_FEATURES: Record<Feature, boolean> = {
@@ -88,6 +94,8 @@ const PRO_FEATURES: Record<Feature, boolean> = {
   allBankRecommendations: true,
   fullActionPlan: true,
   exportPdf: true,
+  whatIfSimulator: true,
+  stressTest: true,
 };
 
 export const PLANS: Record<PlanTier, PlanDefinition> = {
@@ -148,6 +156,51 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Pay-per-use: one complete analysis for ONE company, no subscription
+// ---------------------------------------------------------------------------
+
+/** Billing model of a company: a monthly / yearly plan, or a one-off pay-per-use unlock. */
+export type BillingModel = PlanTier | "pay-per-use";
+
+export const PAY_PER_USE = {
+  id: "pay-per-use" as const,
+  name: "Pay-Per-Use",
+  subtitle: "Plată per utilizare — o analiză completă pentru o firmă, fără abonament recurent.",
+  /** RON, VAT-exclusive, paid once per company. */
+  price: 49,
+  cta: "Deblochează analiza — 49 RON",
+  includes: [
+    "Plată unică de 49 RON / analiză completă (fără abonament)",
+    "Toate cele 5 surse oficiale verificate (ANAF, bilanț, VIES, ONRC, portal.just.ro)",
+    "Toate băncile din România (BCR, BT, ING, Raiffeisen, CEC, UniCredit)",
+    "Simulator interactiv What-If și Stress Test de sezonalitate",
+    "Export PDF „Fișă Pre-Calificare Bancă” (1 pagină A4)",
+    "Plan complet de acțiune 30–90 de zile",
+  ],
+  /** Features unlocked for the company that bought the analysis. */
+  features: {
+    ...NONE,
+    unlimitedXmlUploads: true,
+    portalJustCheck: true,
+    multiSourceVerification: true,
+    fullFormulaAudit: true,
+    sectorBenchmark: true,
+    allBankRecommendations: true,
+    fullActionPlan: true,
+    exportPdf: true,
+    whatIfSimulator: true,
+    stressTest: true,
+  } satisfies Record<Feature, boolean>,
+} as const;
+
+/** One pay-per-use invoice: 49 RON + VAT. */
+export function payPerUseBreakdown() {
+  const net = PAY_PER_USE.price;
+  const vat = round2(net * VAT_RATE);
+  return { net, vat, gross: round2(net + vat), vatRate: VAT_RATE, currency: "RON" as const };
+}
+
 /** B2B / white-label offer for banks (no list price: custom licence + per-lead commission). */
 export const ENTERPRISE_OFFER = {
   title: "Pentru Bănci & Instituții Financiare (Enterprise / White-Label)",
@@ -185,9 +238,13 @@ export const planBadgeLabel = (tier: PlanTier) => `Plan: ${tier.toUpperCase()}`;
 // Feature gating
 // ---------------------------------------------------------------------------
 
-export function canPerformAction(tier: PlanTier, feature: Feature): boolean {
-  return getPlan(tier).features[feature] === true;
+/** `payPerUse` = the active company bought a one-off complete analysis (unlocks it on any plan). */
+export function canPerformAction(tier: PlanTier, feature: Feature, payPerUse = false): boolean {
+  return getPlan(tier).features[feature] === true || (payPerUse && PAY_PER_USE.features[feature] === true);
 }
+
+/** Visible-list limits with the pay-per-use unlock applied (all banks, full plan). */
+export const effectiveLimit = (limit: number | null, payPerUse: boolean) => (payPerUse ? null : limit);
 
 /** Lowest plan that unlocks a feature (for "Deblochează cu Planul …" prompts). */
 export function requiredPlanFor(feature: Feature): PlanTier {
@@ -197,14 +254,14 @@ export function requiredPlanFor(feature: Feature): PlanTier {
 const withinLimit = (limit: number | null, used: number) => limit === null || used < limit;
 
 /** Can one more XML invoice be uploaded for this company? `usedUploads` = XML invoices already uploaded. */
-export function canUploadXml(tier: PlanTier, usedUploads: number) {
-  const limit = getPlan(tier).limits.maxXmlUploads;
+export function canUploadXml(tier: PlanTier, usedUploads: number, payPerUse = false) {
+  const limit = effectiveLimit(getPlan(tier).limits.maxXmlUploads, payPerUse);
   return { allowed: withinLimit(limit, usedUploads), limit, remaining: limit === null ? null : Math.max(0, limit - usedUploads) };
 }
 
 /** How many of `files` fit under the plan's XML limit; the rest needs an upgrade. */
-export function splitUploadsByLimit<T>(tier: PlanTier, usedUploads: number, files: T[]) {
-  const { remaining } = canUploadXml(tier, usedUploads);
+export function splitUploadsByLimit<T>(tier: PlanTier, usedUploads: number, files: T[], payPerUse = false) {
+  const { remaining } = canUploadXml(tier, usedUploads, payPerUse);
   if (remaining === null) return { accepted: files, rejected: [] as T[] };
   return { accepted: files.slice(0, remaining), rejected: files.slice(remaining) };
 }
@@ -221,8 +278,8 @@ export function gateList<T>(items: T[], visible: number | null) {
   return { visible: items.slice(0, visible), locked: items.slice(visible) };
 }
 
-export const gateBanks = <T>(tier: PlanTier, banks: T[]) => gateList(banks, getPlan(tier).limits.visibleBankRecommendations);
-export const gateActionPlan = <T>(tier: PlanTier, items: T[]) => gateList(items, getPlan(tier).limits.visibleActionItems);
+export const gateBanks = <T>(tier: PlanTier, banks: T[], payPerUse = false) => gateList(banks, effectiveLimit(getPlan(tier).limits.visibleBankRecommendations, payPerUse));
+export const gateActionPlan = <T>(tier: PlanTier, items: T[], payPerUse = false) => gateList(items, effectiveLimit(getPlan(tier).limits.visibleActionItems, payPerUse));
 
 /** Business-plan risk alerts from the current indicators. Empty when the plan has no alerts. */
 export function riskAlerts(tier: PlanTier, m: { dscr: number; topClientSharePct: number; creditNotesSharePct: number }): string[] {
@@ -240,8 +297,6 @@ export function riskAlerts(tier: PlanTier, m: { dscr: number; topClientSharePct:
 // ---------------------------------------------------------------------------
 // Prices
 // ---------------------------------------------------------------------------
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Monthly price shown on the card for the chosen billing cycle (RON, VAT-exclusive). */
 export const monthlyPrice = (tier: PlanTier, cycle: BillingCycle) => getPlan(tier).price[cycle];
@@ -281,6 +336,7 @@ export const ROI_COMPARISON = [
   { label: "Timp de diagnostic", traditional: CONSULTING_BENCHMARK.diagnosticTime, creditReady: "Sub 2 minute (instant pe e-Factura)" },
   { label: "Actualizare la facturi noi", traditional: "Taxată separat (250–800 RON/oră)", creditReady: "Recalculare automată în timp real la upload XML" },
   { label: "Potrivire bănci România", traditional: "Subiectivă / limitată", creditReady: "Algoritm obiectiv pe 6 bănci din România" },
+  { label: "O singură analiză, fără abonament", traditional: "Minimum 500 EUR / dosar", creditReady: "Pay-Per-Use: 49 RON / analiză completă" },
 ] as const;
 
 export interface RoiInput {
@@ -343,6 +399,7 @@ export const FEATURE_MATRIX: { category: string; rows: { label: string; cells: [
     category: "Recomandare Bănci & Plan 90 Zile",
     rows: [
       { label: "Recomandări bancare (6 bănci din România)", cells: ["1 generală", "toate", "toate", "white-label"] },
+      { label: "Simulator What-If & Stress Test sezonalitate", cells: [false, true, true, true] },
       { label: "Plan de acțiune 30–90 zile", cells: ["top 2 acțiuni", "complet", "complet", "complet"] },
       { label: "Export Raport „Gata de Bancă” (Print/PDF)", cells: [false, true, true, true] },
       { label: "Leaduri pre-calificate (scor > 70, DSCR validat)", cells: [false, false, false, true] },

@@ -1,20 +1,24 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
 
 const geist = Geist({ variable: "--font-geist", subsets: ["latin", "latin-ext"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin", "latin-ext"] });
 
 export const metadata: Metadata = {
-  title: "Credit Ready — evaluare IMM",
+  title: { default: "Afghankingz Credit — evaluare Credit Ready pentru IMM", template: "%s — Afghankingz Credit" },
   description:
-    "Profil Credit Readiness pentru IMM-uri din România: date e-Factura pe 12 luni, factor uman (quiz + portal.just.ro), scopul investiției și plan de acțiune 30–90 de zile.",
+    "Afghankingz Credit: profil Credit Ready pentru IMM-uri din România din date e-Factura pe 12 luni, 5 surse oficiale (ANAF, bilanț, VIES, ONRC, portal.just.ro), recomandări bancare și plan de acțiune 30–90 de zile.",
+  applicationName: "Afghankingz Credit",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ro" className={`${geist.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChartColumn, CircleCheck, FileText, FileWarning, Gauge, Receipt, RotateCcw, Truck, Users } from "lucide-react";
+import { ChartColumn, CircleCheck, FileText, FileWarning, Gauge, MessageCircleQuestion, Receipt, RotateCcw, Truck, Users } from "lucide-react";
 import type { Invoice, PartyShare } from "@/types/scoring";
 import { isStorno } from "@/lib/metrics";
 import { LOAN_ANNUAL_RATE, LOAN_MONTHS } from "@/lib/scoringEngine";
@@ -11,6 +11,11 @@ import { useAssessment } from "../AssessmentProvider";
 import { MonthlyChart, ScoreRing } from "../charts";
 import { BilantCard, FinancialsCard, OfficialSourcesCard } from "../OfficialData";
 import { PageHeader, StepFooter, XmlUploadButton } from "../Shell";
+import { SpvSyncButton } from "../SpvSyncPanel";
+import { SeasonalityHeatmap } from "../SeasonalityHeatmap";
+import { explain, type JargonKey } from "@/lib/jargon";
+import type { Assessment } from "@/lib/assessment";
+import { browserInflateRaw, invoiceXmlFromZip } from "@/lib/efactura/zip";
 import { Badge, Button, Card, CardHeader, cx, ProgressBar, scoreTone, Stat, TONE_TEXT } from "../ui";
 
 function UploadPanel() {
@@ -21,7 +26,7 @@ function UploadPanel() {
     <Card className="border-emerald/30">
       <CardHeader
         icon={<Receipt size={18} />}
-        title="Încarcă facturi e-Factura (XML UBL 2.1 / RO_CIUS)"
+        title="Facturi e-Factura: preluare automată din SPV sau upload manual XML"
         subtitle="Parsăm InvoiceTypeCode (inclusiv 381 storno), IssueDate, DueDate, furnizor, client, TaxExclusiveAmount și PayableAmount. Scorul se recalculează instant și factura se salvează în Supabase."
         action={
           uploads.length > 0 && (
@@ -31,6 +36,18 @@ function UploadPanel() {
           )
         }
       />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-navy/15 bg-navy-soft/50 p-4">
+          <p className="text-[11px] font-semibold text-faint">Opțiunea 1 · automat</p>
+          <p className="mb-3 mt-0.5 text-xs text-muted">Certificat digital → SPV ANAF → facturi emise & primite → parsare UBL 2.1 → scor recalculat.</p>
+          <SpvSyncButton />
+        </div>
+        <div className="rounded-2xl border border-line p-4">
+          <p className="text-[11px] font-semibold text-faint">Opțiunea 2 · manual</p>
+          <p className="mb-3 mt-0.5 text-xs text-muted">Fișiere .xml UBL 2.1 din programul de facturare sau din SPV; recalculare live.</p>
+          <XmlUploadButton variant="secondary" label="Încarcă Manual XML e-Factura" />
+        </div>
+      </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div
           onDragOver={(e) => {
@@ -41,8 +58,13 @@ function UploadPanel() {
           onDrop={async (e) => {
             e.preventDefault();
             setDrag(false);
-            const files = [...e.dataTransfer.files].filter((f) => f.name.toLowerCase().endsWith(".xml"));
-            if (files.length) await uploadXml(await Promise.all(files.map(async (f) => ({ name: f.name, xml: await f.text() }))));
+            const all = [...e.dataTransfer.files];
+            const files = all.filter((f) => f.name.toLowerCase().endsWith(".xml"));
+            // ZIP archives downloaded from SPV are unpacked in the browser (signature files are skipped).
+            const zips = all.filter((f) => f.name.toLowerCase().endsWith(".zip"));
+            const fromZip = (await Promise.all(zips.map(async (z) => invoiceXmlFromZip(new Uint8Array(await z.arrayBuffer()), browserInflateRaw, z.name).catch(() => [])))).flat();
+            const xml = [...(await Promise.all(files.map(async (f) => ({ name: f.name, xml: await f.text() })))), ...fromZip];
+            if (xml.length) await uploadXml(xml);
           }}
           className={cx(
             "grid place-items-center rounded-xl border-2 border-dashed p-6 text-center transition-colors",
@@ -51,7 +73,7 @@ function UploadPanel() {
         >
           <div>
             <FileText size={28} className="mx-auto text-navy-3" />
-            <p className="mt-2 text-sm font-semibold text-ink">Trage fișierele XML aici</p>
+            <p className="mt-2 text-sm font-semibold text-ink">Trage fișierele XML (sau arhivele ZIP din SPV) aici</p>
             <p className="mb-3 text-xs text-muted">sau</p>
             <XmlUploadButton label="Alege fișiere XML" />
           </div>
@@ -158,6 +180,33 @@ function InvoiceTable({ invoices }: { invoices: Invoice[] }) {
   );
 }
 
+const JARGON: { key: JargonKey; label: string; value: (a: Assessment) => string }[] = [
+  { key: "dscr", label: "DSCR", value: (a) => (a.business.dscr >= 99 ? "fără datorii" : `${num(a.business.dscr)}×`) },
+  { key: "dso", label: "DSO", value: (a) => `${num(a.metrics.dsoDays)} zile` },
+  { key: "concentration", label: "Concentrare client", value: (a) => pct(a.metrics.topClientSharePct) },
+  { key: "storno", label: "Stornări", value: (a) => pct(a.metrics.creditNotesSharePct3m) },
+  { key: "volatility", label: "Volatilitate", value: (a) => `CV ${num(a.metrics.revenueCv)}` },
+];
+
+/** "Pe înțelesul antreprenorului": each banking indicator in one plain sentence, from the firm's own numbers. */
+function PlainLanguageCard({ a }: { a: Assessment }) {
+  return (
+    <Card className="mt-5">
+      <CardHeader icon={<MessageCircleQuestion size={18} />} title="Traducător de jargon bancar — pe înțelesul antreprenorului" subtitle="Ce înseamnă fiecare indicator pentru firma ta, calculat din cifrele ei reale." />
+      <ul className="divide-y divide-line">
+        {JARGON.map((j) => (
+          <li key={j.key} className="grid gap-1 py-2.5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-4">
+            <p className="text-sm font-medium text-ink">
+              {j.label} <span className="font-normal text-muted">· {j.value(a)}</span>
+            </p>
+            <p className="text-sm leading-relaxed text-ink">{explain(j.key, a)}</p>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export function AnalysisStep() {
   const { assessment, invoices, markVisited, investment, company } = useAssessment();
   const m = assessment.metrics;
@@ -217,6 +266,8 @@ export function AnalysisStep() {
         <Stat key={`dscr-${b.dscr}`} label="DSCR estimat" value={b.dscr >= 99 ? "fără datorii" : `${num(b.dscr)}×`} hint={investment.requestedAmount ? `cu rata nouă ${ron(b.loanInstallment)}` : "fără credit nou"} tone={b.dscr < 1.25 ? "red" : undefined} />
       </div>
 
+      <PlainLanguageCard a={assessment} />
+
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Card>
           <CardHeader
@@ -236,6 +287,8 @@ export function AnalysisStep() {
           </div>
         </Card>
       </div>
+
+      <SeasonalityHeatmap />
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {b.items.map((i) => {

@@ -64,6 +64,16 @@ export interface Company {
   officialName?: string;
   /** The user confirmed they may search the administrator by name in public court records (GDPR). */
   nameSearchConsent?: boolean;
+  /**
+   * Administrator CNP, validated (lib/cnp.ts) and kept ONLY masked ("1900101******") with the derived
+   * birth date / county used to tell namesakes apart. The raw CNP is never stored or sent.
+   */
+  ceoCnpMasked?: string;
+  ceoCnpInfo?: { birthDate: string; sex: "M" | "F" | null; countyCode: string; county: string };
+  /** Supabase Auth user that owns the company (null / undefined = guest mode). */
+  userId?: string | null;
+  /** One-off pay-per-use analysis bought for this company (49 RON). */
+  payPerUseUnlocked?: boolean;
 }
 
 export type DebtKind = "credit" | "leasing" | "linie" | "card" | "altele";
