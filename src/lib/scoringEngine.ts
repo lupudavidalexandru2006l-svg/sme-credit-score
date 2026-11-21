@@ -14,6 +14,7 @@ import type {
   InvestmentInput,
   InvestmentPurpose,
   LegalCheckResult,
+  PartyRoleCategory,
   PaymentTermBucket,
   QuestionFeedback,
   QuizAnswers,
@@ -301,6 +302,80 @@ export function normalizeRo(text: string) {
 export function detectCriticalKeywords(...fields: string[]) {
   const haystack = normalizeRo(fields.join(" | "));
   return CRITICAL_KEYWORDS.filter((k) => haystack.includes(k));
+}
+
+const nameTokens = (s: string) => normalizeRo(s).split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Same matching rule as portal.just.ro (verified against the live API):
+ * every searched word must appear as a WHOLE word, in any order, case/diacritics-insensitive.
+ * "Ion Popescu" matches "POPESCU ION"; "Popesc" matches nothing.
+ */
+export function partyNameMatches(partyName: string, searched: string) {
+  const wanted = nameTokens(searched);
+  if (wanted.length === 0) return false;
+  const have = new Set(nameTokens(partyName));
+  return wanted.every((w) => have.has(w));
+}
+
+/** Roles where the case is directed AGAINST the searched party. */
+const TARGETED_ROLES = [
+  "debitor",
+  "inculpat",
+  "parat", // Pârât / Pârâtă
+  "suspect",
+  "faptuitor",
+  "condamnat",
+  "responsabil", // Parte responsabilă civilmente
+];
+
+/** Roles where the searched party is on the OTHER side (victim, claimant, creditor, witness). */
+const NON_TARGETED_ROLES = [
+  "creditor",
+  "reclamant",
+  "vatamat", // Parte vătămată
+  "parte civila",
+  "martor",
+  "lichidator",
+  "administrator judiciar",
+];
+
+export function classifyPartyRole(role: string): PartyRoleCategory {
+  const r = normalizeRo(role);
+  if (!r.trim()) return "necunoscut";
+  // Targeted wins: "Debitor/Creditor" style compound roles stay risky.
+  if (TARGETED_ROLES.some((k) => r.includes(k))) return "vizat";
+  if (NON_TARGETED_ROLES.some((k) => r.includes(k))) return "nevizat";
+  return "necunoscut";
+}
+
+/**
+ * A case is critical only when it has a risk keyword AND the searched party is
+ * not clearly on the other side. Unknown/ambiguous roles stay critical (conservative).
+ */
+/** portal.just.ro returns at most this many parties per case. */
+export const PORTAL_MAX_PARTIES = 100;
+
+export function assessCaseRisk(
+  fields: { obiect: string; categorie: string; stadiu: string },
+  partyRoles: string[],
+  opts: { partyListTruncated?: boolean } = {},
+) {
+  const matchedKeywords = detectCriticalKeywords(fields.obiect, fields.categorie, fields.stadiu);
+  const categories = partyRoles.map(classifyPartyRole);
+  // Mass cases (big insolvencies) list the debtor first; if the searched party is
+  // missing from a truncated 100-party list it is one of the many creditors.
+  const hiddenInMassCase = partyRoles.length === 0 && opts.partyListTruncated === true;
+  const roleCategory: PartyRoleCategory = categories.includes("vizat")
+    ? "vizat"
+    : hiddenInMassCase || (categories.length > 0 && categories.every((c) => c === "nevizat"))
+      ? "nevizat"
+      : "necunoscut";
+  return {
+    matchedKeywords,
+    roleCategory,
+    isCritical: matchedKeywords.length > 0 && roleCategory !== "nevizat",
+  };
 }
 
 export function scoreLegalCases(cases: Pick<CourtCase, "isCritical">[]) {

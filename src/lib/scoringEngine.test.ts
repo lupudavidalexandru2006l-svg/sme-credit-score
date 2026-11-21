@@ -2,8 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  assessCaseRisk,
   calculateFinalScore,
+  classifyPartyRole,
   detectCriticalKeywords,
+  partyNameMatches,
   evaluateFinancialQuiz,
   evaluateInvestment,
   scoreLegalCases,
@@ -106,4 +109,47 @@ test("final score formula, penalty and cap", () => {
 
   const floor = calculateFinalScore(0, 0, { legalScore: 0, integrityKillSwitch: false }, 0);
   assert.equal(floor.finalScore, 0);
+});
+
+test("party name matching mirrors portal.just.ro (whole words, any order)", () => {
+  assert.equal(partyNameMatches("POPESCU ION", "Ion Popescu"), true);
+  assert.equal(partyNameMatches("Popescu Ion Mihai", "Ion Popescu"), true);
+  assert.equal(partyNameMatches("POPESCU ION", "Ion Mihai Popescu"), false); // every word required
+  assert.equal(partyNameMatches("POPESCU ION", "Popesc Ion"), false); // no partial words
+  assert.equal(partyNameMatches("SC ŞTEFĂNESCU SRL", "Ștefănescu"), true); // cedilla vs comma
+  assert.equal(partyNameMatches("ANY", ""), false);
+});
+
+test("party role classification", () => {
+  assert.equal(classifyPartyRole("Debitor"), "vizat");
+  assert.equal(classifyPartyRole("Inculpat"), "vizat");
+  assert.equal(classifyPartyRole("Pârât"), "vizat");
+  assert.equal(classifyPartyRole("Parte responsabilă civilmente"), "vizat");
+  assert.equal(classifyPartyRole("Creditor"), "nevizat");
+  assert.equal(classifyPartyRole("Parte vătămată"), "nevizat");
+  assert.equal(classifyPartyRole("Reclamant"), "nevizat");
+  assert.equal(classifyPartyRole("Intimat"), "necunoscut");
+  assert.equal(classifyPartyRole(""), "necunoscut");
+});
+
+test("case risk combines keywords and role", () => {
+  const insolv = { obiect: "procedura insolvenței", categorie: "Faliment", stadiu: "Fond" };
+  assert.equal(assessCaseRisk(insolv, ["Debitor"]).isCritical, true);
+  assert.equal(assessCaseRisk(insolv, ["Creditor"]).isCritical, false);
+  assert.deepEqual(assessCaseRisk(insolv, ["Creditor"]).matchedKeywords, ["insolven", "faliment"]);
+  assert.equal(assessCaseRisk(insolv, []).isCritical, true); // role not found -> conservative
+  assert.equal(assessCaseRisk(insolv, ["Intimat"]).isCritical, true); // ambiguous -> conservative
+  assert.equal(assessCaseRisk(insolv, ["Creditor", "Debitor"]).isCritical, true); // targeted wins
+  const penal = { obiect: "înșelăciune (art. 244 NCP)", categorie: "Penal", stadiu: "Fond" };
+  assert.equal(assessCaseRisk(penal, ["Parte vătămată"]).isCritical, false);
+  assert.equal(assessCaseRisk(penal, ["Inculpat"]).isCritical, true);
+  const civil = { obiect: "pretenții", categorie: "Civil", stadiu: "Fond" };
+  assert.equal(assessCaseRisk(civil, ["Pârât"]).isCritical, false);
+});
+
+test("party missing from a truncated mass-case list is treated as creditor", () => {
+  const insolv = { obiect: "procedura insolvenței", categorie: "Faliment", stadiu: "Fond" };
+  assert.equal(assessCaseRisk(insolv, [], { partyListTruncated: true }).isCritical, false);
+  assert.equal(assessCaseRisk(insolv, [], { partyListTruncated: false }).isCritical, true);
+  assert.equal(assessCaseRisk(insolv, ["Debitor"], { partyListTruncated: true }).isCritical, true);
 });

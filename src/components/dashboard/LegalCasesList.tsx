@@ -1,11 +1,17 @@
 import { CircleCheck, LoaderCircle, RefreshCw, ShieldAlert } from "lucide-react";
-import type { LegalCheckResult } from "@/types/scoring";
+import type { CourtCase, LegalCheckResult } from "@/types/scoring";
 import { cx, NeuButton } from "@/components/ui/neu";
 
 const SOURCE_BADGE: Record<LegalCheckResult["source"], { label: string; cls: string }> = {
   "portal.just.ro": { label: "LIVE portal.just.ro", cls: "text-positive" },
   simulation: { label: "SIMULARE", cls: "text-amber" },
   fallback: { label: "FALLBACK", cls: "text-scarlet" },
+};
+
+const ROLE_STYLE: Record<CourtCase["roleCategory"], { cls: string; hint: string }> = {
+  vizat: { cls: "text-scarlet", hint: "Dosarul este îndreptat împotriva părții căutate" },
+  nevizat: { cls: "text-positive", hint: "Partea căutată este de partea cealaltă (creditor, reclamant, victimă)" },
+  necunoscut: { cls: "text-amber", hint: "Rol ambiguu sau lipsă — tratat conservator" },
 };
 
 export function LegalCasesList({
@@ -74,6 +80,15 @@ export function LegalCasesList({
                   <span className="neu-raised-sm rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted">
                     {c.matchedBy}
                   </span>
+                  <span
+                    title={ROLE_STYLE[c.roleCategory].hint}
+                    className={cx(
+                      "neu-pressed-sm rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider",
+                      ROLE_STYLE[c.roleCategory].cls,
+                    )}
+                  >
+                    {c.partyRoles.length > 0 ? c.partyRoles.join(" / ") : "rol neidentificat"}
+                  </span>
                   {c.isCritical && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-scarlet/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-scarlet">
                       <ShieldAlert size={12} /> risc critic
@@ -84,9 +99,15 @@ export function LegalCasesList({
               <p className="mt-2 text-sm">{c.obiect || "—"}</p>
               <p className="mt-1 text-xs text-muted">
                 {c.categorie} {c.stadiu && `· ${c.stadiu}`}
-                {c.matchedKeywords.length > 0 && (
-                  <span className="text-scarlet"> · cuvinte-cheie: {c.matchedKeywords.join(", ")}</span>
-                )}
+                {c.matchedKeywords.length > 0 &&
+                  (c.isCritical ? (
+                    <span className="text-scarlet"> · cuvinte-cheie: {c.matchedKeywords.join(", ")}</span>
+                  ) : (
+                    <span className="text-positive">
+                      {" "}
+                      · cuvinte-cheie ({c.matchedKeywords.join(", ")}) ignorate: partea nu este vizată
+                    </span>
+                  ))}
               </p>
             </li>
           ))}

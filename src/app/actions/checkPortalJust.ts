@@ -7,9 +7,10 @@ import type {
   PortalSimulationScenario,
 } from "@/types/scoring";
 import {
-  detectCriticalKeywords,
+  assessCaseRisk,
   FALLBACK_LEGAL_SCORE,
-  normalizeRo,
+  partyNameMatches,
+  PORTAL_MAX_PARTIES,
   scoreLegalCases,
 } from "@/lib/scoringEngine";
 
@@ -71,7 +72,6 @@ export async function parseCautareDosareXml(
   matchedBy: CourtCase["matchedBy"],
   searchedName = "",
 ): Promise<CourtCase[]> {
-  const needle = normalizeRo(searchedName).replace(/\s+/g, " ").trim();
   const doc = parser.parse(xml);
   const body = doc?.Envelope?.Body;
   if (body?.Fault) throw new Error(`SOAP Fault: ${str(body.Fault.faultstring)}`);
@@ -82,13 +82,23 @@ export async function parseCautareDosareXml(
     const categorie = str(d.categorieCazNume || d.categorieCaz);
     const stadiu = str(d.stadiuProcesualNume || d.stadiuProcesual);
     const parti = d.parti?.DosarParte ?? [];
-    // Role of the searched party in this case (e.g. "Debitor", "Creditor", "Pârât").
-    const role = needle
-      ? str(parti.find((p) => normalizeRo(str(p.nume)).includes(needle))?.calitateParte)
-      : "";
-    // Being a creditor in someone else's insolvency is not an integrity risk.
-    const isCreditorOnly = /creditor/.test(normalizeRo(role));
-    const matchedKeywords = isCreditorOnly ? [] : detectCriticalKeywords(obiect, categorie, stadiu);
+    // Roles of the searched party in this case (e.g. "Debitor", "Creditor", "Pârât"),
+    // matched word-by-word in any order, like the portal itself.
+    const partyRoles = parti
+      .filter((p) => partyNameMatches(str(p.nume), searchedName))
+      .map((p) => str(p.calitateParte))
+      .filter(Boolean);
+    const partyListTruncated = parti.length >= PORTAL_MAX_PARTIES;
+    const risk = assessCaseRisk({ obiect, categorie, stadiu }, partyRoles, { partyListTruncated });
+    if (partyRoles.length === 0 && partyListTruncated) {
+      partyRoles.push(`în afara primelor ${PORTAL_MAX_PARTIES} părți (dosar de masă)`);
+    }
+    // Matching parties first, so the searched name is visible in the UI.
+    const sortedParti = [...parti].sort(
+      (a, b) =>
+        Number(partyNameMatches(str(b.nume), searchedName)) -
+        Number(partyNameMatches(str(a.nume), searchedName)),
+    );
     return {
       numar: str(d.numar),
       institutie: str(d.institutie).replace(/([a-z])([A-Z])/g, "$1 $2"),
@@ -96,12 +106,14 @@ export async function parseCautareDosareXml(
       obiect,
       categorie,
       stadiu,
-      parti: parti
+      parti: sortedParti
         .slice(0, 6)
         .map((p) => `${str(p.nume)}${p.calitateParte ? ` (${str(p.calitateParte)})` : ""}`),
       matchedBy,
-      isCritical: matchedKeywords.length > 0,
-      matchedKeywords,
+      partyRoles,
+      roleCategory: risk.roleCategory,
+      isCritical: risk.isCritical,
+      matchedKeywords: risk.matchedKeywords,
     };
   });
 }
@@ -140,8 +152,9 @@ function simulatedCases(
     stadiu: string,
     matchedBy: CourtCase["matchedBy"],
     institutie = "Tribunalul Cluj",
+    role = "Pârât",
   ): CourtCase => {
-    const matchedKeywords = detectCriticalKeywords(obiect, categorie, stadiu);
+    const risk = assessCaseRisk({ obiect, categorie, stadiu }, [role]);
     return {
       numar,
       institutie,
@@ -149,10 +162,12 @@ function simulatedCases(
       obiect,
       categorie,
       stadiu,
-      parti: [matchedBy === "firma" ? `${companyName} (Pârât)` : `${ceoName} (Intimat)`],
+      parti: [`${matchedBy === "firma" ? companyName : ceoName} (${role})`, "SC Exemplu Partener SRL (Reclamant)"],
       matchedBy,
-      isCritical: matchedKeywords.length > 0,
-      matchedKeywords,
+      partyRoles: [role],
+      roleCategory: risk.roleCategory,
+      isCritical: risk.isCritical,
+      matchedKeywords: risk.matchedKeywords,
     };
   };
   switch (scenario) {
@@ -172,8 +187,9 @@ function simulatedCases(
       ];
     case "critical":
       return [
-        base("2231/1285/2026", "procedura insolvenței - societăți cu răspundere limitată", "Faliment", "Fond", "firma"),
-        base("4127/211/2025", "pretenții", "Civil", "Fond", "firma", "Judecătoria Cluj-Napoca"),
+        base("2231/1285/2026", "procedura insolvenței - societăți cu răspundere limitată", "Faliment", "Fond", "firma", "Tribunalul Cluj", "Debitor"),
+        // Creditor in another company's insolvency: listed, but NOT critical.
+        base("918/1285/2026", "procedura insolvenței - SC Client Restanțier SRL", "Faliment", "Fond", "firma", "Tribunalul Cluj", "Creditor"),
       ];
   }
 }

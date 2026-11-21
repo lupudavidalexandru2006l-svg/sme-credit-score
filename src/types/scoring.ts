@@ -129,6 +129,14 @@ export interface InvestmentEvaluation {
 
 export type PortalSimulationScenario = "clean" | "minor" | "many" | "critical";
 
+/**
+ * How the searched party is involved in a case:
+ *  - "vizat":      the case targets them (Debitor, Inculpat, Pârât, Suspect...)
+ *  - "nevizat":    they are on the other side (Creditor, Reclamant, Parte vătămată...)
+ *  - "necunoscut": role missing or ambiguous (Intimat, Petent, Apelant...) — treated conservatively
+ */
+export type PartyRoleCategory = "vizat" | "nevizat" | "necunoscut";
+
 export interface CourtCase {
   numar: string;
   institutie: string;
@@ -138,7 +146,12 @@ export interface CourtCase {
   stadiu: string;
   parti: string[];
   matchedBy: "firma" | "administrator";
+  /** calitateParte of every party matching the searched name (e.g. ["Debitor"]). */
+  partyRoles: string[];
+  roleCategory: PartyRoleCategory;
+  /** Critical = risk keyword present AND role is not "nevizat". */
   isCritical: boolean;
+  /** Risk keywords found in obiect / categorie / stadiu (even when ignored due to role). */
   matchedKeywords: string[];
 }
 
