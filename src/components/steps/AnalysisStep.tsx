@@ -2,21 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ChartColumn, CircleCheck, FileText, FileWarning, Gauge, MessageCircleQuestion, Receipt, RotateCcw, Truck, Users } from "lucide-react";
+import { ChartColumn, CircleCheck, FileText, FileWarning, MessageCircleQuestion, Receipt, RotateCcw, Truck, Users } from "lucide-react";
 import type { Invoice, PartyShare } from "@/types/scoring";
 import { isStorno } from "@/lib/metrics";
 import { LOAN_ANNUAL_RATE, LOAN_MONTHS } from "@/lib/scoringEngine";
 import { monthLabel, num, pct, ron } from "@/lib/util";
 import { useAssessment } from "../AssessmentProvider";
-import { MonthlyChart, ScoreRing } from "../charts";
+import { MonthlyChart } from "../charts";
 import { BilantCard, FinancialsCard, OfficialSourcesCard } from "../OfficialData";
-import { PageHeader, StepFooter, XmlUploadButton } from "../Shell";
+import { GatedFooter, PageHeader, XmlUploadButton } from "../Shell";
 import { SpvSyncButton } from "../SpvSyncPanel";
 import { SeasonalityHeatmap } from "../SeasonalityHeatmap";
 import { explain, type JargonKey } from "@/lib/jargon";
 import type { Assessment } from "@/lib/assessment";
 import { browserInflateRaw, invoiceXmlFromZip } from "@/lib/efactura/zip";
-import { Badge, Button, Card, CardHeader, cx, ProgressBar, scoreTone, Stat, TONE_TEXT } from "../ui";
+import { Badge, Button, Card, CardHeader, cx, ProgressBar, Stat } from "../ui";
 
 function UploadPanel() {
   const { uploadXml, lastUploadResults, persistMessage, uploads, resetUploads } = useAssessment();
@@ -208,7 +208,7 @@ function PlainLanguageCard({ a }: { a: Assessment }) {
 }
 
 export function AnalysisStep() {
-  const { assessment, invoices, markVisited, investment, company } = useAssessment();
+  const { assessment, invoices, markVisited, investment, company, completedSteps, confirmStep2 } = useAssessment();
   const m = assessment.metrics;
   const b = assessment.business;
   const hasInvoices = assessment.dataStatus.hasInvoices;
@@ -268,44 +268,29 @@ export function AnalysisStep() {
 
       <PlainLanguageCard a={assessment} />
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <Card>
-          <CardHeader
-            icon={<ChartColumn size={18} />}
-            title="Vânzări lunare și achiziții"
-            subtitle={`Vârf în ${monthLabel(m.peakMonth)}, minim în ${monthLabel(m.troughMonth)} · cash-flow operațional mediu ${ron(m.operatingCashFlow)}/lună`}
-          />
-          <MonthlyChart months={m.months} />
-        </Card>
-        <Card className="flex flex-col">
-          <CardHeader icon={<Gauge size={18} />} title="S_Business" subtitle="Media ponderată a celor 5 indicatori." />
-          <div className="flex flex-1 flex-col items-center justify-center">
-            <ScoreRing score={b.score} stroke={8} />
-            <p className="mt-3 text-sm text-muted">
-              = <strong className="text-ink">{num(b.score * 0.7)}</strong> din 70 de puncte ale scorului final
-            </p>
-          </div>
-        </Card>
-      </div>
+      <Card className="mt-5">
+        <CardHeader
+          icon={<ChartColumn size={18} />}
+          title="Vânzări lunare și achiziții"
+          subtitle={`Vârf în ${monthLabel(m.peakMonth)}, minim în ${monthLabel(m.troughMonth)} · cash-flow operațional mediu ${ron(m.operatingCashFlow)}/lună`}
+        />
+        <MonthlyChart months={m.months} />
+      </Card>
 
       <SeasonalityHeatmap />
 
+      {/* Indicator values only; their scores appear in step 4. */}
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {b.items.map((i) => {
-          const tone = scoreTone(i.score);
-          return (
-            <Card key={i.id} className="p-4 sm:p-5">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold leading-tight text-ink">{i.label}</p>
-                <Badge tone="neutral">{Math.round(i.weight * 100)}%</Badge>
-              </div>
-              <p className={cx("mt-2 text-3xl font-medium", TONE_TEXT[tone])}>{num(i.score)}</p>
-              <ProgressBar value={i.score} className="mt-2" />
-              <p className="mt-3 text-xs font-medium text-ink">{i.value}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted">{i.rule}</p>
-            </Card>
-          );
-        })}
+        {b.items.map((i) => (
+          <Card key={i.id} className="p-4 sm:p-5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-semibold leading-tight text-ink">{i.label}</p>
+              <Badge tone="neutral">{Math.round(i.weight * 100)}%</Badge>
+            </div>
+            <p className="mt-3 text-sm font-medium text-ink">{i.value}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted">{i.rule}</p>
+          </Card>
+        ))}
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
@@ -332,7 +317,13 @@ export function AnalysisStep() {
         %/an pe {investment.termMonths ?? LOAN_MONTHS} luni; cheltuielile fixe și ratele existente sunt cele declarate de tine mai sus.
       </p>
 
-      <StepFooter prev="/onboarding" next="/investitie" nextLabel="Scopul investiției" />
+      <GatedFooter
+        prev="/onboarding"
+        next="/investitie"
+        label="Continuă la Pasul 3"
+        error={!completedSteps.step1 ? "Finalizează întâi Pasul 1 (firmă, CEO și Quiz Factor Uman)." : null}
+        onContinue={confirmStep2}
+      />
     </div>
   );
 }

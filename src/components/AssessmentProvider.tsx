@@ -23,6 +23,7 @@ import { applyCnpToLegal, validateCnp } from "@/lib/cnp";
 import { courtCounties } from "@/lib/scoringEngine";
 import { mergeHistory, snapshotFromAssessment, type AssessmentSnapshot } from "@/lib/history";
 import { apiFetch } from "@/lib/auth/client";
+import { buildDemo, DEMO_COMPANY_ID } from "@/lib/demo";
 import { useAuth } from "./AuthProvider";
 
 export const EMPTY_QUIZ: QuizAnswers = {
@@ -92,6 +93,17 @@ interface Workspace {
   /** Quiz finished and saved (sequential quiz in step 1 / step 3). */
   quizDone?: boolean;
   investmentDone?: boolean;
+  /** Step 2 confirmed with "Continuă la Pasul 3". */
+  step2Done?: boolean;
+  /** Workspace loaded by "Încarcă Demo Complet". */
+  demo?: boolean;
+}
+
+/** Sequential flow: each step needs the previous ones (saved per company in localStorage). */
+export interface CompletedSteps {
+  step1: boolean;
+  step2: boolean;
+  step3: boolean;
 }
 
 const EMPTY_WORKSPACE: Workspace = { uploads: [], quiz: EMPTY_QUIZ, investment: EMPTY_INVESTMENT, legal: null, official: null, visited: [] };
@@ -232,6 +244,14 @@ interface Ctx {
   today: string;
   /** Saves the current COMPLETE assessment as a new snapshot (never overwrites older ones). */
   saveSnapshot: () => Promise<{ ok: boolean; message: string }>;
+  completedSteps: CompletedSteps;
+  /** Marks step 2 as confirmed (button "Continuă la Pasul 3"). */
+  confirmStep2: () => void;
+  isDemo: boolean;
+  /** Loads the complete demo company and unlocks steps 1-3. */
+  loadDemo: () => void;
+  /** Leaves the demo (removes it) and opens a blank company in step 1. */
+  startNewCompany: () => void;
 }
 
 const AssessmentContext = createContext<Ctx | null>(null);
@@ -273,7 +293,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const accountId = session?.user.id ?? null;
 
-  const company = useMemo(() => companies.find((c) => c.id === activeId) ?? companies[0] ?? BLANK_COMPANY, [companies, activeId]);
+  const company = useMemo(() => (activeId ? (companies.find((c) => c.id === activeId) ?? companies[0] ?? BLANK_COMPANY) : BLANK_COMPANY), [companies, activeId]);
   const companiesRef = useRef<Company[]>([]);
   useEffect(() => {
     companiesRef.current = companies;
@@ -528,6 +548,14 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
 
       const activate = (c: Company, created: boolean, extra = "") => {
         setCompanies((list) => (list.some((x) => x.id === c.id) ? list.map((x) => (x.id === c.id ? { ...x, ...c } : x)) : [...list, c]));
+        // Answers given before the company existed (blank workspace) move to the new company.
+        if (created)
+          setWorkspaces((all) => {
+            if (!all[""] || all[c.id]) return all;
+            const rest = { ...all, [c.id]: all[""] };
+            delete rest[""];
+            return rest;
+          });
         switchCompany(c.id);
         const id = cui ? `CUI ${cui}` : "fără CUI, identificată după nume";
         setPendingDraft(null);
@@ -823,6 +851,52 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     autoChecked.current.delete(company.id);
   }, [company.id, updateWorkspace]);
 
+  const completedSteps: CompletedSteps = useMemo(() => {
+    const step1 = Boolean(company.id && company.name && company.ceoName) && quizCompleted.quiz;
+    const step2 = step1 && Boolean(ws.step2Done);
+    return { step1, step2, step3: step2 && quizCompleted.investment };
+  }, [company.id, company.name, company.ceoName, quizCompleted.quiz, quizCompleted.investment, ws.step2Done]);
+  const confirmStep2 = useCallback(() => updateWorkspace(activeId, (w) => ({ ...w, step2Done: true })), [activeId, updateWorkspace]);
+  const isDemo = Boolean(ws.demo);
+
+  const loadDemo = useCallback(() => {
+    const d = buildDemo(today || new Date().toISOString().slice(0, 10));
+    autoChecked.current.add(DEMO_COMPANY_ID); // never query the real sources for the demo company
+    setRemote((all) => ({ ...all, [DEMO_COMPANY_ID]: null }));
+    setRemoteHistory((all) => ({ ...all, [DEMO_COMPANY_ID]: [] }));
+    setCompanies((list) => [...list.filter((c) => c.id !== DEMO_COMPANY_ID), d.company]);
+    setWorkspaces((all) => ({
+      ...all,
+      [DEMO_COMPANY_ID]: {
+        ...EMPTY_WORKSPACE,
+        uploads: d.uploads,
+        quiz: d.quiz,
+        investment: d.investment,
+        legal: d.legal,
+        official: d.official,
+        visited: ["onboarding", "analiza", "investitie", "profil"],
+        quizDone: true,
+        investmentDone: true,
+        step2Done: true,
+        demo: true,
+      },
+    }));
+    setPendingDraft(null);
+    switchCompany(DEMO_COMPANY_ID);
+  }, [today, switchCompany]);
+
+  const startNewCompany = useCallback(() => {
+    setCompanies((list) => list.filter((c) => c.id !== DEMO_COMPANY_ID));
+    setWorkspaces((all) => {
+      const rest = { ...all };
+      delete rest[DEMO_COMPANY_ID];
+      delete rest[""];
+      return rest;
+    });
+    setPendingDraft(null);
+    switchCompany("");
+  }, [switchCompany]);
+
   const value: Ctx = {
     company,
     companies,
@@ -876,6 +950,11 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     snapshots,
     saveSnapshot,
     today,
+    completedSteps,
+    confirmStep2,
+    isDemo,
+    loadDemo,
+    startNewCompany,
   };
 
   return <AssessmentContext.Provider value={value}>{children}</AssessmentContext.Provider>;

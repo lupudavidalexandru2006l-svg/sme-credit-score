@@ -71,7 +71,7 @@ export function SequentialQuiz({
 
       {phase === "idle" && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-canvas p-5">
-          <p className="text-sm text-muted">{n} întrebări, una câte una. Rezultatul se salvează și actualizează scorul imediat.</p>
+          <p className="text-sm text-muted">{n} întrebări, una câte una. Rezultatul se salvează și va fi calculat la final (Pasul 4).</p>
           <Button
             onClick={() => {
               setCurrentQuestionIndex(0);

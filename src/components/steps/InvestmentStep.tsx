@@ -1,21 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Landmark, Layers, Target } from "lucide-react";
+import { Layers, Target } from "lucide-react";
 import { INVESTMENT_PURPOSES, LOAN_ANNUAL_RATE, LOAN_MONTHS } from "@/lib/scoringEngine";
 import { num, pct, ron } from "@/lib/util";
 import { useAssessment } from "../AssessmentProvider";
-import { BenchmarkRow, ScoreRing } from "../charts";
+import { BenchmarkRow } from "../charts";
 import { LoanSimulator } from "../LoanSimulator";
 import { LoanCostBreakdown } from "../LoanCostBreakdown";
 import { StressTestPanel } from "../StressTestPanel";
 import { ProductComparator } from "../ProductComparator";
 import { SequentialQuiz } from "../SequentialQuiz";
-import { PageHeader, StepFooter } from "../Shell";
-import { Badge, Card, CardHeader, cx, inputCls } from "../ui";
+import { GatedFooter, PageHeader, StepDoneNote } from "../Shell";
+import { Card, CardHeader, cx, inputCls } from "../ui";
 
 export function InvestmentStep() {
-  const { company, investment, setInvestment, assessment, markVisited } = useAssessment();
+  const { company, investment, setInvestment, assessment, markVisited, completedSteps, quizCompleted } = useAssessment();
   const m = assessment.metrics;
   const ev = assessment.investment;
   const bench = assessment.benchmark;
@@ -29,7 +29,6 @@ export function InvestmentStep() {
   const ratio = Number.isFinite(ev.leverageRatio) ? ev.leverageRatio : 0;
   const ratioTone = ratio <= 0.25 ? "bg-emerald" : ratio <= 0.5 ? "bg-amber" : "bg-red";
   const own = investment.ownContributionPct;
-  const pts = (id: string) => ev.items.find((i) => i.id === id)?.points ?? 0;
 
   return (
     <div className="animate-rise">
@@ -39,13 +38,13 @@ export function InvestmentStep() {
         subtitle="Trei întrebări despre finanțare și poziționarea firmei față de alte firme cu același cod CAEN. Pilonul cântărește 15% din scorul final."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div>
         <SequentialQuiz
           kind="investment"
           className=""
           icon={<Target size={18} />}
           title="Formularul de investiție"
-          subtitle={`Scor formular: ${ev.total}/100 · 50% din S_Investiție`}
+          subtitle="3 întrebări despre finanțare. Rezultatul va fi calculat la final (Pasul 4)."
           steps={[
             {
               key: "purpose",
@@ -54,7 +53,6 @@ export function InvestmentStep() {
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-ink">1. Destinația principală a finanțării</p>
-                    <Badge tone="navy">{pts("purpose")}/50 p</Badge>
                   </div>
                   <div role="radiogroup" aria-label="Destinația finanțării" className="grid gap-2 sm:grid-cols-2">
                     {INVESTMENT_PURPOSES.map((p) => {
@@ -87,7 +85,6 @@ export function InvestmentStep() {
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-ink">2. Aport propriu (avans)</p>
-                    <Badge tone="navy">{pts("ownContribution")}/30 p</Badge>
                   </div>
                   <div className="flex items-center gap-4">
                     <input
@@ -124,7 +121,6 @@ export function InvestmentStep() {
                 <div>
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-ink">3. Suma solicitată</p>
-                    <Badge tone="navy">{pts("leverage")}/20 p</Badge>
                   </div>
                   <div className="relative">
                     <input
@@ -169,66 +165,8 @@ export function InvestmentStep() {
               ),
             },
           ]}
-          result={
-            <div className="rounded-xl border border-line bg-canvas p-5">
-              <div className="flex flex-wrap items-center gap-5">
-                <div>
-                  <p className="text-[11px] font-semibold text-faint">Scor formular</p>
-                  <p className="text-4xl font-medium text-ink">
-                    {ev.total}
-                    <span className="text-lg text-faint">/100</span>
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold text-faint">S_Investiție</p>
-                  <p className="text-2xl font-medium text-ink">{assessment.final.pillars.investment.score}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold text-faint">Scor final</p>
-                  <p className="text-2xl font-medium text-ink">{assessment.final.finalScore}</p>
-                </div>
-                <div className="flex-1">
-                  <Badge tone={ev.total >= 70 ? "emerald" : ev.total >= 40 ? "amber" : "red"}>
-                    {ev.total >= 70 ? "Finanțare bine fundamentată" : ev.total >= 40 ? "Fundamentare parțială" : "Fundamentare slabă"}
-                  </Badge>
-                  <p className="mt-1.5 text-[11px] text-muted">Praguri: 70–100 bine fundamentată · 40–69 parțială · 0–39 slabă</p>
-                  {ev.overLeveragedRequest && <p className="mt-1.5 text-xs font-semibold text-red">Alertă de supraîndatorare: suma depășește 50% din CA anualizată.</p>}
-                </div>
-              </div>
-              <ul className="mt-4 space-y-3 border-t border-line pt-4">
-                {ev.items.map((i) => (
-                  <li key={i.id} className="flex items-start justify-between gap-3 text-xs">
-                    <div>
-                      <p className="font-semibold text-ink">{i.question}</p>
-                      <p className="text-muted">{i.detail}</p>
-                    </div>
-                    <span className={cx("shrink-0 font-semibold", i.points === i.maxPoints ? "text-emerald-strong" : i.points === 0 ? "text-red" : "text-amber")}>
-                      {i.points}/{i.maxPoints}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          }
+          result={<StepDoneNote text="Formular de investiție finalizat — Rezultatul va fi calculat la final (Pasul 4)." />}
         />
-
-        <div className="space-y-5">
-          <Card>
-            <CardHeader icon={<Landmark size={18} />} title="S_Investiție" subtitle="0,5 × formular + 0,5 × comparație cu sectorul" />
-            <div className="flex items-center gap-5">
-              <ScoreRing score={assessment.final.pillars.investment.score} size={132} stroke={7} />
-              <div className="space-y-2 text-sm">
-                <p>
-                  Formular: <strong>{ev.total}</strong>/100
-                </p>
-                <p>
-                  Benchmark sector (orientativ): <strong>{num(bench.score)}</strong>/100
-                </p>
-                <p className="text-xs text-muted">= {num(assessment.final.pillars.investment.points)} din 15 puncte finale</p>
-              </div>
-            </div>
-          </Card>
-        </div>
       </div>
 
       <LoanSimulator />
@@ -243,7 +181,7 @@ export function InvestmentStep() {
         <CardHeader
           icon={<Layers size={18} />}
           title={`Firma ta vs. sectorul ${bench.sector.shortLabel}`}
-          subtitle={`${assessment.sectorSource === "caen" ? `mapat din CAEN ${company.caenCode}` : assessment.sectorSource === "manual" ? "sector ales manual (fără CAEN)" : "implicit General IMM (fără CAEN)"} · ${bench.sector.label} · valori de referință orientative (nu statistici oficiale) · scor ${num(bench.score)}/100 (cuartila cea mai bună = 100, mediana = 60, cuartila cea mai slabă = 25)`}
+          subtitle={`${assessment.sectorSource === "caen" ? `mapat din CAEN ${company.caenCode}` : assessment.sectorSource === "manual" ? "sector ales manual (fără CAEN)" : "implicit General IMM (fără CAEN)"} · ${bench.sector.label} · valori de referință orientative (nu statistici oficiale)`}
         />
         <div className="divide-y divide-line">
           {bench.items.map((i) => (
@@ -252,7 +190,7 @@ export function InvestmentStep() {
         </div>
       </Card>
 
-      <StepFooter prev="/analiza" next="/profil" nextLabel="Vezi profilul Credit Ready" />
+      <GatedFooter prev="/analiza" next="/profil" label="Vezi Profilul & Planul Final" error={!completedSteps.step2 ? "Finalizează întâi Pașii 1 și 2." : !quizCompleted.investment ? "Finalizează Formularul de Investiție (toate cele 3 întrebări) înainte de a continua." : null} />
     </div>
   );
 }

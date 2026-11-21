@@ -5,6 +5,7 @@ import { Building2, CalendarClock, ChevronDown, CircleCheck, Fingerprint, Loader
 import type { CourtCase, SeverityLevel } from "@/types/scoring";
 import { caseImpact, caseKey, companyCounty, CONFIDENCE_LABEL, impactLabel, MINOR_DEDUCTION_CAP, scoreLegalImpact } from "@/lib/scoringEngine";
 import { useAssessment } from "./AssessmentProvider";
+import { useHideScores } from "@/lib/useHideScores";
 import { Badge, Button, Card, CardHeader, cx } from "./ui";
 
 const LEVEL_TONE: Record<SeverityLevel, "emerald" | "blue" | "amber" | "red"> = { 0: "emerald", 1: "blue", 2: "amber", 3: "red", 4: "red" };
@@ -112,6 +113,7 @@ function CaseItem({ c }: { c: CourtCase }) {
 /** One report per searched party: the company, then the administrator. */
 function PartySection({ icon, title, name, cases }: { icon: ReactNode; title: string; name: string; cases: CourtCase[] }) {
   const { legalScore, totalDeduction, integrityKillSwitch } = scoreLegalImpact(cases);
+  const hideScores = useHideScores();
   const hasImpact = cases.some((c) => c.deduction > 0 || c.severity === 4);
 
   return (
@@ -126,7 +128,7 @@ function PartySection({ icon, title, name, cases }: { icon: ReactNode; title: st
         </div>
         {name && (
           <Badge tone={integrityKillSwitch ? "red" : totalDeduction === 0 ? "emerald" : legalScore >= 80 ? "blue" : "amber"}>
-            {cases.length} dosare · {integrityKillSwitch ? "dosar critic" : `-${totalDeduction} p`} · {legalScore}/100
+            {cases.length} dosare{hideScores ? "" : ` · ${integrityKillSwitch ? "dosar critic" : `-${totalDeduction} p`} · ${legalScore}/100`}
           </Badge>
         )}
       </div>
@@ -156,6 +158,7 @@ function PartySection({ icon, title, name, cases }: { icon: ReactNode; title: st
 
 export function LegalPanel() {
   const { legal, legalLoading, runLegalCheck, company } = useAssessment();
+  const hideScores = useHideScores();
   const searchedName = (company.officialName || company.name).trim();
   const searchedCeo = company.nameSearchConsent ? company.ceoName.trim() : "";
   const stale =
@@ -201,13 +204,13 @@ export function LegalPanel() {
       {legal && !legal.isFallback && (
         <div className="mt-4">
           <div className="flex flex-wrap items-center gap-4 rounded-xl bg-canvas p-4">
-            <div>
+            {!hideScores && (<div>
               <p className="text-[11px] font-semibold text-faint">Scor legal</p>
               <p className={cx("text-3xl font-medium", legal.legalScore >= 80 ? "text-emerald-strong" : legal.legalScore >= 50 ? "text-amber" : "text-red")}>
                 {legal.legalScore}
                 <span className="text-base text-faint">/100</span>
               </p>
-            </div>
+            </div>)}
             <div className="min-w-0 flex-1 text-xs leading-relaxed text-muted">
               <p>
                 <strong className="text-ink">{legal.totalFound}</strong> dosare pe numele exact

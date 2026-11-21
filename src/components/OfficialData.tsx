@@ -7,6 +7,7 @@ import { effectiveDebtService } from "@/lib/company";
 import { grossResult, netResult, type BilantYear } from "@/lib/real-company-sources";
 import { num, pct, ron } from "@/lib/util";
 import { useAssessment } from "./AssessmentProvider";
+import { useHideScores } from "@/lib/useHideScores";
 import { Badge, Button, Card, CardHeader, cx, Field, inputCls } from "./ui";
 
 const STATUS_TONE = { clean: "emerald", warning: "amber", critical: "red", unavailable: "neutral" } as const;
@@ -15,6 +16,7 @@ const AVAILABILITY_LABEL = { verified: "verificat", not_found: "fără înregist
 /** The 5 real sources of the ACTIVE company, with what each one actually answered. */
 export function OfficialSourcesCard() {
   const { company, verification, verificationLoading, legalLoading, runMultiSourceCheck } = useAssessment();
+  const hideScores = useHideScores();
   const busy = verificationLoading || legalLoading;
   return (
     <Card>
@@ -30,7 +32,7 @@ export function OfficialSourcesCard() {
       />
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl bg-canvas px-4 py-3 text-sm">
         <span className="text-muted">ScorVerificariExterne</span>
-        <span className="text-2xl font-medium text-ink">{verification.aggregateScore === null ? "—" : `${num(verification.aggregateScore)}/100`}</span>
+        <span className="text-2xl font-medium text-ink">{hideScores ? "în Pasul 4" : verification.aggregateScore === null ? "—" : `${num(verification.aggregateScore)}/100`}</span>
         <span className="text-xs text-faint">
           {Math.round(verification.coverage * 100)}% din ponderi au răspuns · intră 50% în Factor uman
         </span>
@@ -45,7 +47,7 @@ export function OfficialSourcesCard() {
               </p>
               <span className="flex items-center gap-1.5">
                 <Badge tone="neutral">{AVAILABILITY_LABEL[s.availability]}</Badge>
-                <Badge tone={STATUS_TONE[s.status]}>{s.score === null ? "nu intră în scor" : `${s.score}/100`}</Badge>
+                {!hideScores && <Badge tone={STATUS_TONE[s.status]}>{s.score === null ? "nu intră în scor" : `${s.score}/100`}</Badge>}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted">{s.summary}</p>

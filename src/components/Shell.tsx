@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useRef, useState, type ReactNode } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Building2, ChartColumn, Check, ClipboardCheck, FileUp, LoaderCircle, LogIn, LogOut, RotateCcw, ShieldCheck, Tag, Target, UserRound, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Building2, ChartColumn, Check, ClipboardCheck, FileUp, FlaskConical, LoaderCircle, Lock, LogIn, LogOut, RotateCcw, ShieldCheck, Tag, Target, UserRound, X } from "lucide-react";
+import { useHideScores } from "@/lib/useHideScores";
 import { BrandLogo } from "./BrandLogo";
 import { useAuth } from "./AuthProvider";
 import { useAssessment, type StepId } from "./AssessmentProvider";
@@ -20,26 +21,65 @@ export const STEPS: { id: StepId; href: string; label: string; short: string; ic
   { id: "profil", href: "/profil", label: "Profil & plan", short: "Profil", icon: <ClipboardCheck size={16} /> },
 ];
 
-function useStepDone() {
-  const { company, assessment, investment, visited } = useAssessment();
-  return (id: StepId) => {
-    switch (id) {
-      case "onboarding":
-        return Boolean(company.name && company.ceoName) && assessment.quiz.answered === 5;
-      case "analiza":
-        return visited.includes("analiza");
-      case "investitie":
-        return investment.purpose !== null && investment.ownContributionPct !== null && (investment.requestedAmount ?? 0) > 0;
-      case "profil":
-        return visited.includes("profil");
-    }
-  };
+/** Step completion + access: step i opens only when every step before it is complete. */
+function useSteps() {
+  const { completedSteps: c, visited } = useAssessment();
+  const done = (id: StepId) => (id === "onboarding" ? c.step1 : id === "analiza" ? c.step2 : id === "investitie" ? c.step3 : c.step3 && visited.includes("profil"));
+  const unlocked = (i: number) => i <= 0 || [c.step1, c.step2, c.step3][i - 1];
+  const firstIncomplete = !c.step1 ? "/onboarding" : !c.step2 ? "/analiza" : !c.step3 ? "/investitie" : "/profil";
+  return { done, unlocked, firstIncomplete, count: [c.step1, c.step2, c.step3].filter(Boolean).length };
+}
+
+/** Route guard: a later step opened by URL redirects to the first incomplete step. */
+function useStepGuard() {
+  const path = usePathname();
+  const router = useRouter();
+  const { hydrated } = useAssessment();
+  const { unlocked, firstIncomplete } = useSteps();
+  const allowed = unlocked(STEPS.findIndex((s) => path.startsWith(s.href)));
+  useEffect(() => {
+    if (hydrated && !allowed) router.replace(firstIncomplete);
+  }, [hydrated, allowed, firstIncomplete, router]);
+  return allowed || !hydrated;
+}
+
+/** Steps 1-3: neutral progress instead of scores. */
+function NeutralProgress() {
+  const { count } = useSteps();
+  return (
+    <div className="mt-8 border-t border-line pt-6">
+      <p className="px-1 text-xs text-faint">Progres evaluare</p>
+      <p className="mt-3 px-1 text-2xl font-light text-ink">
+        {count}
+        <span className="text-base text-faint"> / 3 pași</span>
+      </p>
+      <ProgressBar value={(count / 3) * 100} className="mt-2 h-1" />
+      <p className="mt-3 px-1 text-[11px] leading-relaxed text-muted">Rezultatul va fi calculat la final, în Pasul 4 (Profil & plan final).</p>
+    </div>
+  );
+}
+
+function StepLink({ s, i, className, children }: { s: (typeof STEPS)[number]; i: number; className: string; children: ReactNode }) {
+  const { unlocked } = useSteps();
+  if (!unlocked(i)) {
+    return (
+      <span aria-disabled="true" title="Finalizează pașii anteriori" className={cx(className, "pointer-events-auto cursor-not-allowed opacity-50")}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link href={s.href} className={className}>
+      {children}
+    </Link>
+  );
 }
 
 function Sidebar() {
   const path = usePathname();
   const { assessment, supabase, dataset, legal, legalLoading, verification, verificationLoading } = useAssessment();
-  const done = useStepDone();
+  const { done, unlocked } = useSteps();
+  const hideScores = useHideScores();
   const f = assessment.final;
   const pillars = [
     { label: "Business", w: "70%", score: f.pillars.business.score },
@@ -59,13 +99,15 @@ function Sidebar() {
         {STEPS.map((s, i) => {
           const active = path.startsWith(s.href);
           const ok = done(s.id);
+          const locked = !unlocked(i);
           return (
-            <Link
+            <StepLink
               key={s.id}
-              href={s.href}
+              s={s}
+              i={i}
               className={cx(
                 "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
-                active ? "bg-white text-ink shadow-[0_1px_3px_rgba(23,32,28,0.06)]" : "text-muted hover:bg-white/60 hover:text-ink",
+                active ? "bg-white text-ink shadow-[0_1px_3px_rgba(23,32,28,0.06)]" : locked ? "text-muted" : "text-muted hover:bg-white/60 hover:text-ink",
               )}
             >
               <span
@@ -74,10 +116,10 @@ function Sidebar() {
                   ok ? "bg-emerald-soft text-emerald-strong" : active ? "bg-navy text-white" : "border border-line-strong text-faint",
                 )}
               >
-                {ok ? <Check size={13} strokeWidth={2.5} /> : i + 1}
+                {ok ? <Check size={13} strokeWidth={2.5} /> : locked ? <Lock size={11} /> : i + 1}
               </span>
               <span className="leading-tight">{s.label}</span>
-            </Link>
+            </StepLink>
           );
         })}
         <p className="mb-2 mt-6 px-3 text-xs text-faint">Abonament</p>
@@ -96,6 +138,9 @@ function Sidebar() {
         <AdminNavLink />
       </nav>
 
+      {hideScores ? (
+        <NeutralProgress />
+      ) : (
       <div className="mt-8 border-t border-line pt-6">
         <div className="flex items-center justify-between px-1">
           <p className="text-xs text-faint">Scor live</p>
@@ -135,6 +180,7 @@ function Sidebar() {
           ))}
         </div>
       </div>
+      )}
 
       <div className="mt-auto space-y-1.5 px-1 pt-6 text-[11px] text-faint">
         <p className="flex items-center gap-2">
@@ -164,6 +210,8 @@ function Sidebar() {
 function MobileNav() {
   const path = usePathname();
   const { assessment } = useAssessment();
+  const hideScores = useHideScores();
+  const { count, unlocked } = useSteps();
   return (
     <div className="no-print sticky top-0 z-20 border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between">
@@ -173,22 +221,30 @@ function MobileNav() {
         <Link href="/pricing" className={cx("ml-auto mr-3 rounded-full px-3 py-1 text-[11px]", path.startsWith("/pricing") ? "bg-navy text-white" : "border border-line text-muted")}>
           Prețuri
         </Link>
-        <p className="text-sm text-muted">
-          Scor{" "}
-          <span className="text-lg font-light text-ink">
-            {assessment.final.complete ? <Figure value={num(assessment.final.finalScore)} /> : "—"}
-          </span>
-        </p>
+        {hideScores ? (
+          <p className="text-sm text-muted">
+            Progres <span className="text-lg font-light text-ink">{count}/3</span>
+          </p>
+        ) : (
+          <p className="text-sm text-muted">
+            Scor{" "}
+            <span className="text-lg font-light text-ink">
+              {assessment.final.complete ? <Figure value={num(assessment.final.finalScore)} /> : "—"}
+            </span>
+          </p>
+        )}
       </div>
       <nav className="mt-3 grid grid-cols-4 gap-1" aria-label="Pașii evaluării">
         {STEPS.map((s, i) => (
-          <Link
+          <StepLink
             key={s.id}
-            href={s.href}
-            className={cx("rounded-full px-1 py-1.5 text-center text-[11px]", path.startsWith(s.href) ? "bg-navy text-white" : "text-muted")}
+            s={s}
+            i={i}
+            className={cx("inline-flex items-center justify-center gap-1 rounded-full px-1 py-1.5 text-center text-[11px]", path.startsWith(s.href) ? "bg-navy text-white" : "text-muted")}
           >
+            {!unlocked(i) && <Lock size={10} />}
             {i + 1}. {s.short}
-          </Link>
+          </StepLink>
         ))}
       </nav>
     </div>
@@ -328,7 +384,8 @@ function TopBar() {
 
 function ScoreToastView() {
   const { toast, dismissToast } = useAssessment();
-  if (!toast) return null;
+  const hideScores = useHideScores();
+  if (!toast || hideScores) return null;
   const delta = Math.round((toast.to - toast.from) * 10) / 10;
   const up = delta >= 0;
   return (
@@ -359,15 +416,46 @@ function ScoreToastView() {
   );
 }
 
+/** Discreet banner while the demo company is active. */
+function DemoBanner() {
+  const { isDemo, startNewCompany } = useAssessment();
+  const router = useRouter();
+  if (!isDemo) return null;
+  return (
+    <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-navy/15 bg-navy-soft/60 px-4 py-2.5 text-xs text-ink">
+      <p className="flex items-center gap-2">
+        <FlaskConical size={14} className="shrink-0 text-navy-3" />
+        <span>
+          <strong>Mod Demo Activ</strong> — poți naviga liber prin pașii 1–4 pentru a inspecta datele.
+        </span>
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          startNewCompany();
+          router.push("/onboarding");
+        }}
+        className="inline-flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 font-medium hover:border-line-strong"
+      >
+        <RotateCcw size={12} /> Ieși din Demo / Firmă nouă
+      </button>
+    </div>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const { hydrated } = useAssessment();
+  const allowed = useStepGuard();
   return (
     <div className={cx("flex min-h-screen transition-opacity duration-200 lg:p-3", hydrated ? "opacity-100" : "opacity-0")}>
       <Sidebar />
       <div className="min-w-0 flex-1">
         <MobileNav />
         <TopBar />
-        <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-8 sm:py-8">
+          <DemoBanner />
+          {allowed ? children : null}
+        </main>
       </div>
       <ScoreToastView />
       <UpgradePrompt />
@@ -391,6 +479,47 @@ export function PageHeader({ step, title, subtitle, action }: { step: number; ti
         <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">{subtitle}</p>
       </div>
       {action}
+    </div>
+  );
+}
+
+/** Neutral confirmation shown in steps 1-3 instead of a score. */
+export function StepDoneNote({ text = "Pas completat — Rezultatul va fi calculat la final (Pasul 4)." }: { text?: string }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-emerald/30 bg-emerald-soft px-4 py-3 text-sm font-medium text-emerald-strong">
+      <Check size={16} strokeWidth={2.5} className="shrink-0" /> {text}
+    </div>
+  );
+}
+
+/** "Continuă" that validates the current step first; the error is shown under the button. */
+export function GatedFooter({ prev, next, label, error, onContinue }: { prev?: string; next: string; label: string; error: string | null; onContinue?: () => void }) {
+  const router = useRouter();
+  const [note, setNote] = useState<string | null>(null);
+  return (
+    <div className="no-print mt-10 flex items-start justify-between gap-3">
+      {prev ? (
+        <Link href={prev} className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm text-muted hover:bg-white/70 hover:text-ink">
+          <ArrowLeft size={15} /> Înapoi
+        </Link>
+      ) : (
+        <span />
+      )}
+      <div className="flex flex-col items-end gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (error) return setNote(error);
+            setNote(null);
+            onContinue?.();
+            router.push(next);
+          }}
+          className="inline-flex items-center gap-2 rounded-full bg-navy px-6 py-3 text-sm font-medium text-white hover:bg-navy-2"
+        >
+          {label} <ArrowRight size={15} />
+        </button>
+        {note && <p className="max-w-xs text-right text-xs font-medium text-red">{note}</p>}
+      </div>
     </div>
   );
 }

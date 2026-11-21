@@ -2,16 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronDown, CircleAlert, ListChecks, LoaderCircle, ShieldAlert } from "lucide-react";
+import { ArrowRight, FlaskConical, ListChecks, LoaderCircle } from "lucide-react";
 import { CLIENT_SHARE_BUCKETS, PAYMENT_TERM_BUCKETS, quizTruthFromMetrics, supplierOptions } from "@/lib/scoringEngine";
 import { useAssessment } from "../AssessmentProvider";
 import { CompanyForm } from "../CompanyForm";
 import { LegalPanel } from "../LegalPanel";
 import { SequentialQuiz } from "../SequentialQuiz";
-import { PageHeader } from "../Shell";
+import { PageHeader, StepDoneNote } from "../Shell";
 import { Badge, cx, inputCls, Segmented } from "../ui";
 
-const LEVEL_TONE = { ridicat: "emerald", bun: "blue", partial: "amber", deconectat: "red" } as const;
+/** "Demo complet (1 click)": a ready-to-analyse company, straight to step 4. */
+function DemoLoader() {
+  const { loadDemo } = useAssessment();
+  const router = useRouter();
+  return (
+    <div className="no-print mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-navy/15 bg-white/70 p-4">
+      <div>
+        <p className="text-sm font-medium text-ink">Vrei să vezi direct rezultatul?</p>
+        <p className="text-xs text-muted">Firmă demo completă (NORD FRESH DISTRIBUTIE SRL): facturi pe 12 luni, verificări externe, quiz și formular de investiție completate.</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          loadDemo();
+          router.push("/profil");
+        }}
+        className="inline-flex items-center gap-2 rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-white hover:bg-navy-2"
+      >
+        <FlaskConical size={15} /> Încarcă Demo Complet (Date Gata de Analiză)
+      </button>
+    </div>
+  );
+}
 
 function QuestionShell({ n, points, title, children }: { n: number; points: number; title: string; children: React.ReactNode }) {
   return (
@@ -31,7 +53,6 @@ function QuestionShell({ n, points, title, children }: { n: number; points: numb
 export function OnboardingStep() {
   const { quiz, setQuiz, assessment, markVisited } = useAssessment();
   const truth = quizTruthFromMetrics(assessment.metrics);
-  const q = assessment.quiz;
   const [revenueText, setRevenueText] = useState(quiz.revenueEstimate ? quiz.revenueEstimate.toLocaleString("ro-RO") : "");
 
   useEffect(() => markVisited("onboarding"), [markVisited]);
@@ -43,6 +64,7 @@ export function OnboardingStep() {
 
   return (
     <div className="animate-rise">
+      <DemoLoader />
       <PageHeader
         step={1}
         title="Onboarding & factor uman"
@@ -63,7 +85,7 @@ export function OnboardingStep() {
         intro={
           !assessment.dataStatus.hasInvoices && (
             <p className="mb-4 rounded-xl bg-amber-soft px-4 py-3 text-xs font-medium text-amber">
-              Quiz-ul se verifică pe facturile reale ale firmei. Poți răspunde acum, dar punctajul apare după ce încarci facturile e-Factura în Pasul 2.
+              Quiz-ul se verifică pe facturile reale ale firmei (încărcate în Pasul 2). Rezultatul îl vezi la final, în Pasul 4.
             </p>
           )
         }
@@ -156,76 +178,7 @@ export function OnboardingStep() {
             ),
           },
         ]}
-        result={
-          <div className="rounded-xl border border-line bg-canvas p-5">
-            <div className="flex flex-wrap items-center gap-5">
-              <div>
-                <p className="text-[11px] font-semibold text-faint">Scor quiz</p>
-                <p className="text-4xl font-medium text-ink">
-                  {q.total}
-                  <span className="text-lg text-faint">/100</span>
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-faint">S_Uman</p>
-                <p className="text-2xl font-medium text-ink">{assessment.final.pillars.human.score}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold text-faint">Scor final</p>
-                <p className="text-2xl font-medium text-ink">{assessment.final.finalScore}</p>
-              </div>
-              <div className="flex-1">
-                <Badge tone={LEVEL_TONE[q.level]}>{q.levelLabel}</Badge>
-                <p className="mt-1.5 text-[11px] text-muted">Praguri: 85–100 control ridicat · 35–84 bun / parțial · 0–34 deconectare (kill-switch)</p>
-                {q.flags.map((f) => (
-                  <p key={f} className="mt-1.5 flex items-start gap-1.5 text-xs text-muted">
-                    <CircleAlert size={13} className="mt-0.5 shrink-0" /> {f}
-                  </p>
-                ))}
-              </div>
-            </div>
-            {!assessment.dataStatus.hasInvoices && (
-              <p className="mt-4 text-xs font-medium text-amber">Punctajul devine final după ce încarci facturile e-Factura în Pasul 2.</p>
-            )}
-            {assessment.final.quizKillSwitch && (
-              <p className="mt-4 flex items-start gap-2 rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm font-semibold text-red">
-                <ShieldAlert size={18} className="mt-0.5 shrink-0" /> Alertă de guvernanță: kill-switch activ (quiz 0–34) — se scad 10 puncte (-10 pct) din scorul final.
-              </p>
-            )}
-            <details className="group mt-4" open>
-              <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-semibold text-navy-3">
-                <ChevronDown size={15} className="transition-transform group-open:rotate-180" /> Rezumat pe întrebări (validare față de e-Factura)
-              </summary>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-xs">
-                  <thead className="text-faint">
-                    <tr>
-                      <th className="py-2 pr-3 font-semibold">Întrebare</th>
-                      <th className="py-2 pr-3 font-semibold">Răspunsul tău</th>
-                      <th className="py-2 pr-3 font-semibold">e-Factura</th>
-                      <th className="py-2 text-right font-semibold">Puncte</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {q.items.map((i) => (
-                      <tr key={i.id} className="border-t border-line align-top">
-                        <td className="py-2.5 pr-3 font-medium text-ink">
-                          {i.question}
-                          <p className="font-normal text-muted">{i.detail}</p>
-                        </td>
-                        <td className="py-2.5 pr-3">{i.userAnswer}</td>
-                        <td className="py-2.5 pr-3">{i.truthAnswer}</td>
-                        <td className={cx("py-2.5 text-right font-semibold", i.points === i.maxPoints ? "text-emerald-strong" : i.points === 0 ? "text-red" : "text-amber")}>
-                          {i.points}/{i.maxPoints}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          </div>
-        }
+        result={<StepDoneNote text="Quiz Factor Uman finalizat — Rezultatul va fi calculat la final (Pasul 4)." />}
       />
 
       <ContinueToAnalysis />
@@ -235,28 +188,32 @@ export function OnboardingStep() {
 
 /**
  * "Continuă" to step 2: an unsaved company form is saved first (same rules as the Save button), so step 2
- * always shows the company typed here. Navigation never blocks: without a valid form it just goes on.
+ * always shows the company typed here. Step 2 opens only with company name + CEO saved and the quiz finished.
  */
 function ContinueToAnalysis() {
-  const { pendingDraft, saveCompany } = useAssessment();
+  const { pendingDraft, saveCompany, company, quizCompleted } = useAssessment();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const go = async () => {
     setBusy(true);
+    setNote(null);
     try {
+      let hasCompany = Boolean(company.id && company.name && company.ceoName);
       if (pendingDraft) {
         const r = await saveCompany(pendingDraft);
-        if (!r.ok) setNote(r.message);
+        if (!r.ok) return setNote(r.message);
+        hasCompany = true;
       }
+      if (!hasCompany) return setNote("Completează numele firmei și numele CEO-ului (administratorului), apoi salvează firma.");
+      if (!quizCompleted.quiz) return setNote("Finalizează Quiz-ul Factor Uman (toate cele 5 întrebări) înainte de a continua.");
+      router.push("/analiza");
     } finally {
       setBusy(false);
-      router.push("/analiza");
     }
   };
   return (
-    <div className="no-print mt-10 flex flex-wrap items-center justify-end gap-3">
-      {note && <p className="text-xs text-amber">{note}</p>}
+    <div className="no-print mt-10 flex flex-col items-end gap-2">
       {pendingDraft && <p className="text-xs text-muted">Modificările din formularul firmei se salvează automat.</p>}
       <button
         type="button"
@@ -265,8 +222,9 @@ function ContinueToAnalysis() {
         className="inline-flex items-center gap-2 rounded-full bg-navy px-6 py-3 text-sm font-medium text-white hover:bg-navy-2 disabled:opacity-60"
       >
         {busy ? <LoaderCircle size={15} className="animate-spin" /> : null}
-        Analiză business <ArrowRight size={15} />
+        Continuă la Pasul 2 <ArrowRight size={15} />
       </button>
+      {note && <p className="max-w-sm text-right text-xs font-medium text-red">{note}</p>}
     </div>
   );
 }

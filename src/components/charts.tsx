@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BenchmarkItem, MonthPoint } from "@/types/scoring";
 import { monthLabel, num, ron } from "@/lib/util";
 import { cx } from "./ui";
+import { useHideScores } from "@/lib/useHideScores";
 
 /** A formatted number with its decimal part dimmed ("68,3" → 68 + ",3"). */
 export function Figure({ value }: { value: string }) {
@@ -126,6 +127,7 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
 
 /** "Firma ta vs. sector": p25-p75 band, median tick and company marker on one axis. */
 export function BenchmarkRow({ item }: { item: BenchmarkItem }) {
+  const hideScores = useHideScores();
   const lo = Math.min(item.p25, item.company) * 0.8;
   const hi = Math.max(item.p75, item.company) * 1.15;
   const pos = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
@@ -139,7 +141,7 @@ export function BenchmarkRow({ item }: { item: BenchmarkItem }) {
           <span className="font-semibold text-ink">{fmt(item.company)}</span>
           <span className="text-muted"> vs. mediana {fmt(item.median)} · </span>
           <span className={cx("font-semibold", tone)}>{item.verdict}</span>
-          <span className="text-muted"> · {num(item.score)} p</span>
+          {!hideScores && <span className="text-muted"> · {num(item.score)} p</span>}
         </p>
       </div>
       <div className="relative h-7">
