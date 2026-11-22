@@ -11,7 +11,7 @@ interface Body {
 }
 
 /**
- * POST /api/invoices — persist invoices parsed from uploaded e-Factura XML.
+ * POST /api/invoices — persist invoices parsed from uploaded e-Factura.
  * They are attached to the ACTIVE company only (company_id); other companies' invoices are untouched.
  */
 export async function POST(request: NextRequest) {

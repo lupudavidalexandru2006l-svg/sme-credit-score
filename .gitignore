@@ -17,6 +17,8 @@
 /.next/
 /.next-preview/
 /.next-side/
+/.next-build/
+/.next-verify/
 /out/
 
 # production
@@ -47,3 +49,8 @@ next-env.d.ts
 /.claude
 /.next-build/
 /.next-verify/
+
+# local logs & build scratch
+*.log
+/dev.log
+/install.log

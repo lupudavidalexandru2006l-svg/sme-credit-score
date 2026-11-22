@@ -1,7 +1,7 @@
 /**
  * Server-side Supabase access, multi-company. Optional: without env vars the app runs in
  * "local" mode (localStorage only) and nothing is persisted here. No invented data is ever written:
- * a new company starts with no invoices until real e-Factura XML is uploaded.
+ * a new company starts with no invoices until real e-Factura is uploaded.
  *
  * Rules:
  *  - companies are never deleted; CUI and CAEN are optional (null in the DB);
@@ -248,7 +248,7 @@ export interface UpsertCompanyInput {
 /**
  * Step 1 "save company": returns the existing company (same CUI, or same normalized name)
  * with its optional fields completed, or creates a new one. Never deletes anything.
- * A new company starts empty: its invoices come only from uploaded e-Factura XML.
+ * A new company starts empty: its invoices come only from uploaded e-Factura.
  */
 export async function upsertCompany(sb: SupabaseClient, input: UpsertCompanyInput) {
   const draft = { name: input.name.trim(), cui: formatCui(input.cui) };

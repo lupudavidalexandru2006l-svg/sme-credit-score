@@ -6,6 +6,7 @@
 import type { Company } from "../types/scoring";
 import { cleanCaen } from "./data/benchmarks.ts";
 import { normCui } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 /** Legal-form words ignored when comparing company names: "SC X SRL" = "x s.r.l." = "X". */
 const LEGAL_FORMS = new Set(["sc", "srl", "srld", "sa", "snc", "scs", "sca", "ra", "pfa", "ii", "if", "ong"]);
@@ -90,7 +91,7 @@ export function hashString(s: string) {
 
 
 /** Human label for the company selector: "Nord Fresh Distribuție SRL · RO45127893" or "· fără CUI". */
-export const companyLabel = (c: Pick<Company, "name" | "cui">) => `${c.name} · ${c.cui ? c.cui : "fără CUI"}`;
+export const companyLabel = (c: Pick<Company, "name" | "cui">) => `${c.name} · ${c.cui ? c.cui : tr("fără CUI")}`;
 
 /** Stable invoice key: `${direction}:${supplierCui}:${number}`. */
 export const invoiceKey = (inv: { direction: string; supplierCui: string; number: string }) => `${inv.direction}:${inv.supplierCui.replace(/D/g, "")}:${inv.number}`;

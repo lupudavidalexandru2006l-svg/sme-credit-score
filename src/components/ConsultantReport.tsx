@@ -6,6 +6,7 @@ import { gateActionPlan, gateBanks } from "@/lib/pricing";
 import { num, ron } from "@/lib/util";
 import { useAssessment } from "./AssessmentProvider";
 import { Badge, Card, CardHeader, cx } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 /**
  * Step 4 consultant layer: the conclusion, the right financing instrument, the questions the bank will ask,
@@ -27,15 +28,15 @@ export function ConsultantReport() {
   return (
     <div className="mt-5 space-y-5">
       <Card className="break-inside-avoid">
-        <CardHeader icon={<ClipboardList size={18} />} title="Concluzia consultantului" subtitle={`${company.officialName || company.name} · pe datele reale încărcate și verificate`} />
-        <p className={cx("rounded-xl px-4 py-3 text-sm leading-relaxed", conclusion.ready ? "bg-canvas text-ink" : "bg-amber-soft text-amber")}>{conclusion.text}</p>
+        <CardHeader icon={<ClipboardList size={18} />} title={tr("Concluzia consultantului")} subtitle={`${company.officialName || company.name} · ${tr("pe datele reale încărcate și verificate")}`} />
+        <p className={cx("rounded-xl px-4 py-3 text-sm leading-relaxed", conclusion.ready ? "bg-canvas text-ink" : "bg-amber-soft text-amber")}>{tr(conclusion.text)}</p>
         {conclusion.ready && visibleBanks.length > 0 && (
           <p className="mt-3 text-xs text-muted">
-            Unde să depui întâi:{" "}
+            {tr("Unde să depui întâi:")}{" "}
             {visibleBanks.map((b, i) => (
               <span key={b.id}>
                 {i > 0 && " · "}
-                <strong className="text-ink">{b.bank}</strong> — {b.product} ({b.matchPct}% potrivire, până la {ron(b.maxAmount)})
+                <strong className="text-ink">{b.bank}</strong> — {tr(b.product)} ({tr("{p}% potrivire, până la {v}", { p: b.matchPct, v: ron(b.maxAmount) })})
               </span>
             ))}
           </p>
@@ -44,30 +45,30 @@ export function ConsultantReport() {
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card className="break-inside-avoid">
-          <CardHeader icon={<Route size={18} />} title="Instrumentul de finanțare potrivit" subtitle="Nu orice nevoie se rezolvă cu un credit clasic." />
+          <CardHeader icon={<Route size={18} />} title={tr("Instrumentul de finanțare potrivit")} subtitle={tr("Nu orice nevoie se rezolvă cu un credit clasic.")} />
           <ul className="space-y-2.5">
             {instruments.map((i) => (
               <li key={i.id} className="rounded-xl border border-line p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-ink">{i.title}</p>
-                  <Badge tone={i.fit === "recomandat" ? "emerald" : "neutral"}>{i.fit}</Badge>
+                  <p className="text-sm font-medium text-ink">{tr(i.title)}</p>
+                  <Badge tone={i.fit === "recomandat" ? "emerald" : "neutral"}>{tr(i.fit)}</Badge>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-muted">{i.why}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">{tr(i.why)}</p>
               </li>
             ))}
           </ul>
         </Card>
 
         <Card className="break-inside-avoid">
-          <CardHeader icon={<MessagesSquare size={18} />} title="Ce te va întreba banca" subtitle="Întrebările care decurg din profilul tău și ce să pregătești." />
+          <CardHeader icon={<MessagesSquare size={18} />} title={tr("Ce te va întreba banca")} subtitle={tr("Întrebările care decurg din profilul tău și ce să pregătești.")} />
           <ol className="space-y-2.5">
             {questions.map((q, i) => (
               <li key={q.q} className="rounded-xl bg-canvas p-3">
                 <p className="text-sm font-medium text-ink">
                   <span className="mr-1.5 text-faint">{i + 1}.</span>
-                  {q.q}
+                  {tr(q.q)}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">Pregătește: {q.prep}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted">{tr("Pregătește:")} {tr(q.prep)}</p>
               </li>
             ))}
           </ol>
@@ -78,8 +79,8 @@ export function ConsultantReport() {
         <Card className="break-inside-avoid">
           <CardHeader
             icon={<FileCheck2 size={18} />}
-            title="Dosarul de credit"
-            subtitle="Bifează ce ai deja; lista se salvează pe firmă."
+            title={tr("Dosarul de credit")}
+            subtitle={tr("Bifează ce ai deja; lista se salvează pe firmă.")}
             action={<Badge tone={haveDocs === documents.length ? "emerald" : "amber"}>{`${haveDocs}/${documents.length}`}</Badge>}
           />
           <ul className="space-y-1.5">
@@ -88,8 +89,8 @@ export function ConsultantReport() {
                 <button type="button" onClick={() => toggleDoc(d.id)} className="flex w-full items-start gap-2.5 rounded-xl px-2 py-1.5 text-left hover:bg-canvas">
                   {docs[d.id] ? <CheckSquare size={16} className="mt-0.5 shrink-0 text-emerald-strong" /> : <Square size={16} className="mt-0.5 shrink-0 text-faint" />}
                   <span>
-                    <span className={cx("block text-sm", docs[d.id] ? "text-muted line-through" : "text-ink")}>{d.label}</span>
-                    <span className="block text-[11px] text-faint">{d.where}</span>
+                    <span className={cx("block text-sm", docs[d.id] ? "text-muted line-through" : "text-ink")}>{tr(d.label)}</span>
+                    <span className="block text-[11px] text-faint">{tr(d.where)}</span>
                   </span>
                 </button>
               </li>
@@ -100,8 +101,8 @@ export function ConsultantReport() {
         <Card className="break-inside-avoid">
           <CardHeader
             icon={<TrendingUp size={18} />}
-            title="Progres pe planul de acțiune"
-            subtitle="Bifează acțiunile făcute; scorul complet se salvează zilnic."
+            title={tr("Progres pe planul de acțiune")}
+            subtitle={tr("Bifează acțiunile făcute; scorul complet se salvează zilnic.")}
             action={<Badge tone="navy">{`${doneCount}/${visibleActions.length}`}</Badge>}
           />
           <ul className="space-y-1.5">
@@ -110,19 +111,19 @@ export function ConsultantReport() {
                 <button type="button" onClick={() => toggleAction(a.id)} className="flex w-full items-start gap-2.5 rounded-xl px-2 py-1.5 text-left hover:bg-canvas">
                   {doneActions.includes(a.id) ? <CheckSquare size={16} className="mt-0.5 shrink-0 text-emerald-strong" /> : <Square size={16} className="mt-0.5 shrink-0 text-faint" />}
                   <span className={cx("text-sm", doneActions.includes(a.id) ? "text-muted line-through" : "text-ink")}>
-                    {a.title} <span className="text-[11px] text-faint">· {a.horizon} zile</span>
+                    {tr(a.title)} <span className="text-[11px] text-faint">· {tr("{n} zile", { n: a.horizon })}</span>
                   </span>
                 </button>
               </li>
             ))}
-            {visibleActions.length === 0 && <li className="text-xs text-faint">Nicio acțiune în plan.</li>}
+            {visibleActions.length === 0 && <li className="text-xs text-faint">{tr("Nicio acțiune în plan.")}</li>}
           </ul>
           <div className="mt-4 border-t border-line pt-3">
-            <p className="text-xs font-medium text-ink">Istoricul scorului</p>
+            <p className="text-xs font-medium text-ink">{tr("Istoricul scorului")}</p>
             {history.length === 0 ? (
-              <p className="mt-1 text-[11px] text-faint">Apare după primul scor complet (cu facturi, date declarate și verificări externe).</p>
+              <p className="mt-1 text-[11px] text-faint">{tr("Apare după primul scor complet (cu facturi, date declarate și verificări externe).")}</p>
             ) : (
-              <div className="mt-2 flex items-end gap-1.5" aria-label="Istoricul scorului">
+              <div className="mt-2 flex items-end gap-1.5" aria-label={tr("Istoricul scorului")}>
                 {history.slice(-14).map((p) => (
                   <div key={p.date} className="flex flex-col items-center gap-1" title={`${p.date}: ${num(p.score)}`}>
                     <div className="w-5 rounded-t bg-navy/70" style={{ height: `${Math.max(4, p.score * 0.6)}px` }} />

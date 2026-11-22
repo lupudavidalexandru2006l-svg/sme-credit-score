@@ -4,9 +4,10 @@ import { Calculator, ShieldCheck, TrendingDown } from "lucide-react";
 import type { CollateralKind } from "@/types/scoring";
 import { annuityInstallment, LOAN_ANNUAL_RATE, LOAN_MONTHS, principalForInstallment } from "@/lib/bcr-formulas";
 import { effectiveDebtService } from "@/lib/company";
-import { monthLabel, num, ron } from "@/lib/util";
+import { getNumberLocale, monthLabel, num, ron } from "@/lib/util";
 import { useAssessment } from "./AssessmentProvider";
 import { Badge, Button, Card, CardHeader, cx, Field, inputCls } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 const TERMS = [24, 36, 48, 60, 84];
 /** Minimum DSCR used for the "sustainable amount" (common covenant in Romanian SME lending). */
@@ -64,17 +65,17 @@ export function LoanSimulator() {
     <Card className="mt-5">
       <CardHeader
         icon={<Calculator size={18} />}
-        title="Simulator de credit și proiecție de cash-flow"
-        subtitle={`Dobândă orientativă ${LOAN_ANNUAL_RATE * 100}%/an, rată anuitate. Pe facturile reale ale firmei și pe cheltuielile declarate.`}
+        title={tr("Simulator de credit și proiecție de cash-flow")}
+        subtitle={tr("Dobândă orientativă {r}%/an, rată anuitate. Pe facturile reale ale firmei și pe cheltuielile declarate.", { r: LOAN_ANNUAL_RATE * 100 })}
       />
       {!ready ? (
         <p className="rounded-xl bg-amber-soft px-4 py-3 text-xs font-medium text-amber">
-          Simulatorul are nevoie de facturile e-Factura și de cheltuielile fixe / ratele existente declarate în Pasul 2. Fără ele nu calculăm o sumă sau o proiecție.
+          {tr("Simulatorul are nevoie de facturile e-Factura și de cheltuielile fixe / ratele existente declarate în pasul 1. Fără ele nu calculăm o sumă sau o proiecție.")}
         </p>
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-3">
-            <Field label="Durata creditului">
+            <Field label={tr("Durata creditului")}>
               <div className="flex flex-wrap gap-1.5">
                 {TERMS.map((t) => (
                   <button
@@ -83,25 +84,25 @@ export function LoanSimulator() {
                     onClick={() => setInvestment({ termMonths: t })}
                     className={cx("rounded-full border px-3 py-1.5 text-xs font-medium", t === term ? "border-navy bg-navy text-white" : "border-line-strong bg-white text-ink hover:border-navy-3")}
                   >
-                    {t} luni
+                    {tr("{n} luni", { n: t })}
                   </button>
                 ))}
               </div>
             </Field>
             <div className="rounded-2xl border border-line/70 bg-white/60 p-4">
-              <p className="text-xs text-muted">Rata nouă la suma cerută</p>
-              <p className="mt-1 text-xl text-ink">{amount > 0 ? `${ron(installment)}/lună` : "—"}</p>
-              <p className="text-[11px] text-faint">DSCR {amount > 0 || existing > 0 ? `${num(assessment.business.dscr)}×` : "fără datorii"} (minim uzual {num(TARGET_DSCR)}×)</p>
+              <p className="text-xs text-muted">{tr("Rata nouă la suma cerută")}</p>
+              <p className="mt-1 text-xl text-ink">{amount > 0 ? `${ron(installment)}${tr("/lună")}` : "—"}</p>
+              <p className="text-[11px] text-faint">DSCR {amount > 0 || existing > 0 ? `${num(assessment.business.dscr)}×` : tr("fără datorii")} ({tr("minim uzual {d}×", { d: num(TARGET_DSCR) })})</p>
             </div>
             <div className="rounded-2xl border border-emerald/30 bg-emerald-soft/40 p-4">
-              <p className="text-xs text-muted">Suma pe care firma o poate susține</p>
+              <p className="text-xs text-muted">{tr("Suma pe care firma o poate susține")}</p>
               <p className="mt-1 text-xl text-ink">{sustainable > 0 ? ron(sustainable) : "0 RON"}</p>
               <p className="text-[11px] text-faint">
-                la DSCR {num(TARGET_DSCR)}×, {term} luni · rată maximă {ron(maxInstallment)}/lună
+                {tr("la DSCR {d}×, {t} luni · rată maximă {m}/lună", { d: num(TARGET_DSCR), t: term, m: ron(maxInstallment) })}
               </p>
               {sustainable > 0 && sustainable !== amount && (
                 <Button variant="ghost" className="mt-2 px-0 py-1 text-xs" onClick={() => setInvestment({ requestedAmount: sustainable })}>
-                  Folosește această sumă
+                  {tr("Folosește această sumă")}
                 </Button>
               )}
             </div>
@@ -110,15 +111,15 @@ export function LoanSimulator() {
           <div className="mt-5">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <TrendingDown size={15} className="text-navy-3" />
-              <p className="text-sm font-medium text-ink">Cash-flow lunar cu rata nouă (ultimele 12 luni reale)</p>
-              <Badge tone={negBase === 0 ? "emerald" : "amber"}>{negBase} luni negative (bază)</Badge>
-              <Badge tone={negLow === 0 ? "emerald" : negLow <= 3 ? "amber" : "red"}>{negLow} luni negative (vânzări −20%)</Badge>
+              <p className="text-sm font-medium text-ink">{tr("Cash-flow lunar cu rata nouă (ultimele 12 luni reale)")}</p>
+              <Badge tone={negBase === 0 ? "emerald" : "amber"}>{tr("{n} luni negative (bază)", { n: negBase })}</Badge>
+              <Badge tone={negLow === 0 ? "emerald" : negLow <= 3 ? "amber" : "red"}>{tr("{n} luni negative (vânzări −20%)", { n: negLow })}</Badge>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-xs">
                 <thead className="text-faint">
                   <tr>
-                    <th className="py-1.5 pr-3 font-semibold">Scenariu</th>
+                    <th className="py-1.5 pr-3 font-semibold">{tr("Scenariu")}</th>
                     {rows.map((r) => (
                       <th key={r.month} className="py-1.5 pr-2 text-right font-semibold">
                         {monthLabel(r.month, false)}
@@ -129,7 +130,7 @@ export function LoanSimulator() {
                 <tbody>
                   {(["base", "pessimistic"] as const).map((k) => (
                     <tr key={k} className="border-t border-line">
-                      <td className="py-1.5 pr-3 text-muted">{k === "base" ? "Bază" : "Vânzări −20%"}</td>
+                      <td className="py-1.5 pr-3 text-muted">{k === "base" ? tr("Bază") : tr("Vânzări −20%")}</td>
                       {rows.map((r) => (
                         <td key={r.month} className={cx("py-1.5 pr-2 text-right font-medium", r[k] < 0 ? "text-red" : "text-ink")}>
                           {num(Math.round(r[k] / 1000))}k
@@ -141,39 +142,39 @@ export function LoanSimulator() {
               </table>
             </div>
             <p className="mt-2 text-[11px] text-muted">
-              Cash cumulat minim: {ron(minBase)} în scenariul de bază, {ron(minLow)} la vânzări −20%.
-              {minLow < 0 ? " Ai nevoie de această rezervă (sau de o linie de credit) ca să treci de lunile slabe." : " Firma rămâne pe plus și în scenariul pesimist."} Proiecția nu include TVA,
-              impozitul pe profit și investiția propriu-zisă.
+              {tr("Cash cumulat minim: {b} în scenariul de bază, {l} la vânzări −20%.", { b: ron(minBase), l: ron(minLow) })}{" "}
+              {minLow < 0 ? tr("Ai nevoie de această rezervă (sau de o linie de credit) ca să treci de lunile slabe.") : tr("Firma rămâne pe plus și în scenariul pesimist.")}{" "}
+              {tr("Proiecția nu include TVA, impozitul pe profit și investiția propriu-zisă.")}
             </p>
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-            <Field label={<span className="flex items-center gap-1.5"><ShieldCheck size={14} /> Garanție oferită</span>}>
+            <Field label={<span className="flex items-center gap-1.5"><ShieldCheck size={14} /> {tr("Garanție oferită")}</span>}>
               <select className={inputCls} value={collateral.kind} onChange={(e) => setInvestment({ collateral: { ...collateral, kind: e.target.value as CollateralKind } })}>
                 {COLLATERAL.map((c) => (
                   <option key={c.value} value={c.value}>
-                    {c.label}
+                    {tr(c.label)}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Valoare de piață (RON)">
+            <Field label={tr("Valoare de piață (RON)")}>
               <input
                 className={inputCls}
                 inputMode="numeric"
                 disabled={collateral.kind === "fara"}
-                value={collateral.value ? collateral.value.toLocaleString("ro-RO") : ""}
+                value={collateral.value ? collateral.value.toLocaleString(getNumberLocale()) : ""}
                 onChange={(e) => setInvestment({ collateral: { ...collateral, value: Number(e.target.value.replace(/\D/g, "")) || 0 } })}
               />
             </Field>
             <div className="rounded-xl bg-canvas p-3 text-xs text-muted">
               {collateral.kind === "fara" || amount === 0 ? (
-                COLLATERAL.find((c) => c.value === collateral.kind)?.hint
+                tr(COLLATERAL.find((c) => c.value === collateral.kind)?.hint ?? "")
               ) : (
                 <>
-                  Acoperire: <strong className={coverage >= 1 ? "text-emerald-strong" : "text-amber"}>{num(Math.round(coverage * 100))}%</strong> din suma cerută.{" "}
-                  {COLLATERAL.find((c) => c.value === collateral.kind)?.hint}
-                  {coverage < 1 && " Completează cu o garanție FNGCIMM sau mărește aportul propriu."}
+                  {tr("Acoperire:")} <strong className={coverage >= 1 ? "text-emerald-strong" : "text-amber"}>{num(Math.round(coverage * 100))}%</strong> {tr("din suma cerută.")}{" "}
+                  {tr(COLLATERAL.find((c) => c.value === collateral.kind)?.hint ?? "")}
+                  {coverage < 1 && ` ${tr("Completează cu o garanție FNGCIMM sau mărește aportul propriu.")}`}
                 </>
               )}
             </div>

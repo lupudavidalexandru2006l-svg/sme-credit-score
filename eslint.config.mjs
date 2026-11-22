@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Side-by-side build/dev output folders (NEXT_DIST_DIR=.next-build, .next-preview, ...).
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

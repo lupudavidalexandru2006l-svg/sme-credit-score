@@ -28,12 +28,13 @@ import {
   STORNO_PENALTY,
   STORNO_PENALTY_THRESHOLD_PCT,
 } from "./bcr-formulas.ts";
-import { clamp, monthLabel, num, round1, round2 } from "./util.ts";
+import { clamp, monthLabel, num, round1, round2, getNumberLocale } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 /** DSCR reported when the firm has no debt service at all (no existing loans, no new loan). */
 export const DSCR_NO_DEBT = 99;
 
-const ron = (n: number) => `${Math.round(n).toLocaleString("ro-RO")} RON`;
+const ron = (n: number) => `${Math.round(n).toLocaleString(getNumberLocale())} RON`;
 
 export function statusForScore(score: number): ScoreStatus {
   if (score >= 80) return "Bank-Ready";
@@ -73,46 +74,46 @@ export function computeBusinessScore(m: BusinessMetrics, company: Company, reque
   const items: SubScore[] = [
     {
       id: "stability",
-      label: "Stabilitatea încasărilor",
+      label: tr("Stabilitatea încasărilor"),
       weight: BUSINESS_WEIGHTS.stability,
       score: cvScore(m.revenueCv),
-      value: `CV = σ/μ = ${num(m.revenueCv)} (volatilitate ${num(m.revenueCv * 100)}% pe 12 luni)`,
-      rule: "Coeficientul de variație al vânzărilor lunare (σ/μ). CV < 0,15 → 100 p · 0,15–0,30 → 75 p · 0,30–0,50 → 45 p · > 0,50 → 20 p.",
+      value: tr("CV = σ/μ = {cv} (volatilitate {v}% pe 12 luni)", { cv: num(m.revenueCv), v: num(m.revenueCv * 100) }),
+      rule: tr("Coeficientul de variație al vânzărilor lunare (σ/μ). CV < 0,15 → 100 p · 0,15–0,30 → 75 p · 0,30–0,50 → 45 p · > 0,50 → 20 p."),
     },
     {
       id: "repayment",
-      label: "Capacitatea de rambursare (DSCR)",
+      label: tr("Capacitatea de rambursare (DSCR)"),
       weight: BUSINESS_WEIGHTS.repayment,
       score: dscrScore(dscr),
       value:
         debtService > 0
-          ? `DSCR ${num(round2(dscr))}× = EBITDA ${ron(m.operatingCashFlow)} / rate ${ron(debtService)} (existente ${ron(company.existingMonthlyDebtService)} + nouă ${ron(loanInstallment)})`
-          : "Fără rate existente și fără credit cerut: nu există serviciu al datoriei",
-      rule: `Rata nouă = anuitate R = P·r(1+r)^n / ((1+r)^n − 1) la ${LOAN_ANNUAL_RATE * 100}%/an, ${months} luni. DSCR = EBITDA lunar estimat / (rate existente + rata nouă). ≥ 1,50 → 100 p · 1,25–1,49 → 80 p · 1,10–1,24 → 55 p · 1,00–1,09 → 30 p · < 1,00 → 0 p.`,
+          ? tr("DSCR {d}× = EBITDA {e} / rate {r} (existente {x} + nouă {n})", { d: num(round2(dscr)), e: ron(m.operatingCashFlow), r: ron(debtService), x: ron(company.existingMonthlyDebtService), n: ron(loanInstallment) })
+          : tr("Fără rate existente și fără credit cerut: nu există serviciu al datoriei"),
+      rule: tr("Rata nouă = anuitate R = P·r(1+r)^n / ((1+r)^n − 1) la {r}%/an, {m} luni. DSCR = EBITDA lunar estimat / (rate existente + rata nouă). ≥ 1,50 → 100 p · 1,25–1,49 → 80 p · 1,10–1,24 → 55 p · 1,00–1,09 → 30 p · < 1,00 → 0 p.", { r: LOAN_ANNUAL_RATE * 100, m: months }),
     },
     {
       id: "payments",
-      label: "Comportamentul de plată (DSO)",
+      label: tr("Comportamentul de plată (DSO)"),
       weight: BUSINESS_WEIGHTS.payments,
       score: pay.score,
-      value: `DSO ${num(m.dsoDays)} zile (termen contractual ${num(m.avgPaymentTermDays)} zile) · stornări 3 luni ${num(m.creditNotesSharePct3m)}%${pay.penalty ? ` → −${STORNO_PENALTY} p` : ""}`,
-      rule: `DSO = zile de la emitere la încasare, ponderat cu valoarea (fără date de încasare: DueDate − IssueDate). ≤ 15 → 100 p · 16–30 → 80 p · 31–45 → 55 p · 46–60 → 30 p · > 60 → 10 p. Stornări (381) > ${STORNO_PENALTY_THRESHOLD_PCT}% în ultimele 3 luni: −${STORNO_PENALTY} p.`,
+      value: `${tr("DSO {d} zile (termen contractual {t} zile) · stornări 3 luni {s}%", { d: num(m.dsoDays), t: num(m.avgPaymentTermDays), s: num(m.creditNotesSharePct3m) })}${pay.penalty ? ` → −${STORNO_PENALTY} p` : ""}`,
+      rule: tr("DSO = zile de la emitere la încasare, ponderat cu valoarea (fără date de încasare: DueDate − IssueDate). ≤ 15 → 100 p · 16–30 → 80 p · 31–45 → 55 p · 46–60 → 30 p · > 60 → 10 p. Stornări (381) > {t}% în ultimele 3 luni: −{p} p.", { t: STORNO_PENALTY_THRESHOLD_PCT, p: STORNO_PENALTY }),
     },
     {
       id: "concentration",
-      label: "Concentrarea veniturilor",
+      label: tr("Concentrarea veniturilor"),
       weight: BUSINESS_WEIGHTS.concentration,
       score: concentrationScore(m.topClientSharePct),
-      value: `clientul #1 (${m.topClients[0]?.name ?? "—"}) = ${num(m.topClientSharePct)}% din vânzări`,
-      rule: "Ponderea celui mai mare client în vânzările pe 12 luni. < 15% → 100 p · 15–30% → 80 p · 30–50% → 45 p · > 50% → 15 p.",
+      value: tr("clientul #1 ({c}) = {p}% din vânzări", { c: m.topClients[0]?.name ?? "—", p: num(m.topClientSharePct) }),
+      rule: tr("Ponderea celui mai mare client în vânzările pe 12 luni. < 15% → 100 p · 15–30% → 80 p · 30–50% → 45 p · > 50% → 15 p."),
     },
     {
       id: "seasonality",
-      label: "Sezonalitate & reziliență în luni slabe",
+      label: tr("Sezonalitate & reziliență în luni slabe"),
       weight: BUSINESS_WEIGHTS.seasonality,
       score: resilienceScore(resilienceRatio),
-      value: `luni slabe ${weak.months.map((x) => monthLabel(x, false)).join(", ")}: marjă ${ron(weak.margin)}/lună vs. obligații ${ron(obligations)}/lună = ${num(round2(resilienceRatio))}×`,
-      rule: "Marja brută medie din cele mai slabe 3 luni / (cheltuieli fixe + rate existente + rata nouă). ≥ 1,25× → 100 p · 1,10–1,24× → 80 p · 1,00–1,09× → 60 p · 0,85–0,99× → 35 p · < 0,85× → 10 p.",
+      value: tr("luni slabe {m}: marjă {g}/lună vs. obligații {o}/lună = {r}×", { m: weak.months.map((x) => monthLabel(x, false)).join(", "), g: ron(weak.margin), o: ron(obligations), r: num(round2(resilienceRatio)) }),
+      rule: tr("Marja brută medie din cele mai slabe 3 luni / (cheltuieli fixe + rate existente + rata nouă). ≥ 1,25× → 100 p · 1,10–1,24× → 80 p · 1,00–1,09× → 60 p · 0,85–0,99× → 35 p · < 0,85× → 10 p."),
     },
   ].map((i) => ({ ...i, score: round1(i.score) }) as SubScore);
 
@@ -167,7 +168,7 @@ export function calculateFinalScore(input: {
   if (quizKillSwitch) {
     score = clamp(score - QUIZ_KILL_SWITCH_PENALTY, 0, 100);
     warnings.push(
-      `Kill-switch de guvernanță: Quiz-ul financiar are ${quizScore}/100 (≤ ${QUIZ_KILL_SWITCH_MAX}). Conducerea nu cunoaște indicatorii de bază ai firmei — se scad ${QUIZ_KILL_SWITCH_PENALTY} puncte din scorul final.`,
+      tr("Kill-switch de guvernanță: Quiz-ul financiar are {q}/100 (≤ {m}). Conducerea nu cunoaște indicatorii de bază ai firmei — se scad {p} puncte din scorul final.", { q: quizScore, m: QUIZ_KILL_SWITCH_MAX, p: QUIZ_KILL_SWITCH_PENALTY }),
     );
   }
 

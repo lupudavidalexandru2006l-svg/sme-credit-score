@@ -5,6 +5,7 @@ import type { BenchmarkItem, MonthPoint } from "@/types/scoring";
 import { monthLabel, num, ron } from "@/lib/util";
 import { cx } from "./ui";
 import { useHideScores } from "@/lib/useHideScores";
+import { tr } from "@/lib/i18n/tr";
 
 /** A formatted number with its decimal part dimmed ("68,3" → 68 + ",3"). */
 export function Figure({ value }: { value: string }) {
@@ -58,7 +59,7 @@ export function ScoreRing({
           <p className={cx("font-light tracking-tight", dark ? "text-white" : "text-ink")} style={{ fontSize: size * 0.26, lineHeight: 1 }}>
             <Figure value={num(v)} />
           </p>
-          <p className={cx("mt-1.5 text-[11px]", dark ? "text-white/60" : "text-faint")}>{label ?? "din 100"}</p>
+          <p className={cx("mt-1.5 text-[11px]", dark ? "text-white/60" : "text-faint")}>{label ?? tr("din 100")}</p>
         </div>
       </div>
     </div>
@@ -75,9 +76,9 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-medium text-muted">
-        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-navy-3/30" /> Vânzări nete (fără TVA)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald" /> din XML încărcat</span>
-        <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 bg-faint" /> Achiziții</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-navy-3/30" /> {tr("Vânzări nete (fără TVA)")}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald" /> {tr("din XML încărcat")}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3 bg-faint" /> {tr("Achiziții")}</span>
       </div>
       <div className="relative">
         <div className="flex items-end gap-1.5 sm:gap-2.5" style={{ height: H }} onMouseLeave={() => setHover(null)}>
@@ -107,10 +108,10 @@ export function MonthlyChart({ months }: { months: MonthPoint[] }) {
         {active && (
           <div className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded-xl bg-navy/95 px-3 py-2 text-[11px] text-white shadow-pop backdrop-blur">
             <p className="font-semibold">{monthLabel(active.month)}</p>
-            <p>Vânzări: {ron(active.revenue)}</p>
-            {active.uploadedRevenue !== 0 && <p className="text-emerald-soft">din XML: {ron(active.uploadedRevenue)}</p>}
-            <p>Achiziții: {ron(active.purchases)}</p>
-            <p>Cash-flow net: {ron(active.netCashFlow)}</p>
+            <p>{tr("Vânzări:")} {ron(active.revenue)}</p>
+            {active.uploadedRevenue !== 0 && <p className="text-emerald-soft">{tr("din XML:")} {ron(active.uploadedRevenue)}</p>}
+            <p>{tr("Achiziții:")} {ron(active.purchases)}</p>
+            <p>{tr("Cash-flow net:")} {ron(active.netCashFlow)}</p>
           </div>
         )}
       </div>
@@ -132,15 +133,15 @@ export function BenchmarkRow({ item }: { item: BenchmarkItem }) {
   const hi = Math.max(item.p75, item.company) * 1.15;
   const pos = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
   const tone = item.verdict === "mai bun" ? "text-emerald-strong" : item.verdict === "la nivel" ? "text-blue" : "text-amber";
-  const fmt = (v: number) => `${num(v)}${item.unit === "zile" ? " z" : item.unit}`;
+  const fmt = (v: number) => `${num(v)}${item.unit === "zile" ? ` ${tr("z")}` : item.unit}`;
   return (
     <div className="py-3">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm font-semibold text-ink">{item.label}</p>
+        <p className="text-sm font-semibold text-ink">{tr(item.label)}</p>
         <p className="text-xs">
           <span className="font-semibold text-ink">{fmt(item.company)}</span>
-          <span className="text-muted"> vs. mediana {fmt(item.median)} · </span>
-          <span className={cx("font-semibold", tone)}>{item.verdict}</span>
+          <span className="text-muted"> {tr("vs. mediana")} {fmt(item.median)} · </span>
+          <span className={cx("font-semibold", tone)}>{tr(item.verdict)}</span>
           {!hideScores && <span className="text-muted"> · {num(item.score)} p</span>}
         </p>
       </div>
@@ -149,21 +150,21 @@ export function BenchmarkRow({ item }: { item: BenchmarkItem }) {
         <div
           className="absolute top-1/2 h-3 -translate-y-1/2 rounded-full bg-navy-soft"
           style={{ left: pos(item.p25), width: `calc(${pos(item.p75)} - ${pos(item.p25)})` }}
-          title={`Sector p25–p75: ${fmt(item.p25)} – ${fmt(item.p75)}`}
+          title={`${tr("Sector")} p25–p75: ${fmt(item.p25)} – ${fmt(item.p75)}`}
         />
-        <div className="absolute top-1/2 h-5 w-0.5 -translate-y-1/2 bg-navy-3" style={{ left: pos(item.median) }} title={`Mediana: ${fmt(item.median)}`} />
+        <div className="absolute top-1/2 h-5 w-0.5 -translate-y-1/2 bg-navy-3" style={{ left: pos(item.median) }} title={`${tr("Mediana")}: ${fmt(item.median)}`} />
         <div
           className={cx(
             "absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow transition-[left] duration-500",
             item.verdict === "mai slab" ? "bg-amber" : "bg-emerald",
           )}
           style={{ left: pos(item.company) }}
-          title={`Firma ta: ${fmt(item.company)}`}
+          title={`${tr("Firma ta")}: ${fmt(item.company)}`}
         />
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-faint">
-        <span>{item.higherIsBetter ? "mai mic = mai slab" : "mai mic = mai bine"}</span>
-        <span>bandă = 50% din firmele din sector</span>
+        <span>{item.higherIsBetter ? tr("mai mic = mai slab") : tr("mai mic = mai bine")}</span>
+        <span>{tr("bandă = 50% din firmele din sector")}</span>
       </div>
     </div>
   );

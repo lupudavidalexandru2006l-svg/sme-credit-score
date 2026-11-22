@@ -29,6 +29,7 @@ import type {
   SeverityLevel,
 } from "../types/scoring";
 import { piecewise, round1 } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 export { round1 };
 
@@ -37,17 +38,17 @@ export { round1 };
 // ---------------------------------------------------------------------------
 
 export const PAYMENT_TERM_BUCKETS: { value: PaymentTermBucket; label: string }[] = [
-  { value: "0-7", label: "0-7 zile" },
-  { value: "15", label: "15 zile" },
-  { value: "30", label: "30 zile" },
-  { value: "45+", label: "45+ zile" },
+  { value: "0-7", label: tr("0-7 zile") },
+  { value: "15", label: tr("15 zile") },
+  { value: "30", label: tr("30 zile") },
+  { value: "45+", label: tr("45+ zile") },
 ];
 
 export const CLIENT_SHARE_BUCKETS: { value: ClientShareBucket; label: string }[] = [
-  { value: "<15", label: "sub 15%" },
+  { value: "<15", label: tr("sub 15%") },
   { value: "15-30", label: "15-30%" },
   { value: "30-50", label: "30-50%" },
-  { value: ">50", label: "peste 50%" },
+  { value: ">50", label: tr("peste 50%") },
 ];
 
 export const INVESTMENT_PURPOSES: {
@@ -56,10 +57,10 @@ export const INVESTMENT_PURPOSES: {
   hint: string;
   points: number;
 }[] = [
-  { value: "growth", label: "Creștere / eficiență măsurabilă", hint: "Utilaje, echipamente, tehnologie", points: 50 },
-  { value: "working_capital", label: "Capital de lucru", hint: "Contracte ferme sau stocuri sezoniere", points: 35 },
-  { value: "marketing", label: "Marketing și digitalizare", hint: "Campanii, software, reamenajare spațiu", points: 25 },
-  { value: "refinancing", label: "Refinanțare / lichiditate", hint: "Datorii existente sau goluri de cash", points: 10 },
+  { value: "growth", label: tr("Creștere / eficiență măsurabilă"), hint: "Utilaje, echipamente, tehnologie", points: 50 },
+  { value: "working_capital", label: tr("Capital de lucru"), hint: tr("Contracte ferme sau stocuri sezoniere"), points: 35 },
+  { value: "marketing", label: tr("Marketing și digitalizare"), hint: tr("Campanii, software, reamenajare spațiu"), points: 25 },
+  { value: "refinancing", label: tr("Refinanțare / lichiditate"), hint: tr("Datorii existente sau goluri de cash"), points: 10 },
 ];
 
 /** Significant storno threshold (% of total issued). */
@@ -69,7 +70,7 @@ export const QUIZ_CONTROL_THRESHOLD = 35;
 export const QUIZ_CONTROL_PENALTY = 10;
 
 /** Extra quiz option instead of invented distractor names: the real supplier is not among the listed ones. */
-export const OTHER_SUPPLIER = "Alt furnizor (nu e în listă)";
+export const OTHER_SUPPLIER = tr("Alt furnizor (nu e în listă)");
 
 const ron = (n: number) =>
   `${new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 0 }).format(n)} RON`;
@@ -114,8 +115,8 @@ export function supplierOptions(truth: QuizGroundTruth) {
 export function quizLevel(total: number): { level: QuizLevel; label: string } {
   if (total >= 85) return { level: "ridicat", label: "Control financiar ridicat" };
   if (total >= 60) return { level: "bun", label: "Control financiar bun" };
-  if (total >= QUIZ_CONTROL_THRESHOLD) return { level: "partial", label: "Vizibilitate parțială" };
-  return { level: "deconectat", label: "Deconectare de la cifre" };
+  if (total >= QUIZ_CONTROL_THRESHOLD) return { level: "partial", label: tr("Vizibilitate parțială") };
+  return { level: "deconectat", label: tr("Deconectare de la cifre") };
 }
 
 const labelOf = <T extends string>(list: { value: T; label: string }[], v: T | null) =>
@@ -156,13 +157,13 @@ export function evaluateFinancialQuiz(
   const q1 = scoreRevenueEstimate(answers.revenueEstimate, actualRev);
   items.push({
     id: "revenue",
-    question: "Cifra de afaceri facturată în ultimele 3 luni (fără TVA)",
+    question: tr("Cifra de afaceri facturată în ultimele 3 luni (fără TVA)"),
     userAnswer: answers.revenueEstimate === null ? "—" : ron(answers.revenueEstimate),
     truthAnswer: ron(actualRev),
     detail:
       q1.relativeError === null
-        ? "Nicio estimare validă."
-        : `Ai estimat ${ron(answers.revenueEstimate!)} vs. ${ron(actualRev)} în e-Factura — abatere ${pct(q1.relativeError * 100)}`,
+        ? tr("Nicio estimare validă.")
+        : tr("Ai estimat {a} vs. {b} în e-Factura — abatere {c}", { a: ron(answers.revenueEstimate!), b: ron(actualRev), c: pct(q1.relativeError * 100) }),
     points: q1.points,
     maxPoints: 35,
   });
@@ -170,7 +171,7 @@ export function evaluateFinancialQuiz(
   // Q2 — average payment term (max 25)
   const truthTerm = paymentTermToBucket(groundTruth.avgPaymentTermDays);
   let q2 = 0;
-  let q2Detail = "Niciun răspuns.";
+  let q2Detail = tr("Niciun răspuns.");
   if (answers.paymentTerm) {
     const d = Math.abs(
       indexOf(PAYMENT_TERM_BUCKETS, answers.paymentTerm) - indexOf(PAYMENT_TERM_BUCKETS, truthTerm),
@@ -178,12 +179,12 @@ export function evaluateFinancialQuiz(
     q2 = scoreBucketDistance(d, 25, 12);
     q2Detail =
       d === 0
-        ? `Potrivire exactă — termen mediu real ${groundTruth.avgPaymentTermDays} zile`
-        : `${d === 1 ? "Interval vecin" : `La ${d} intervale distanță`} — termen mediu real ${groundTruth.avgPaymentTermDays} zile`;
+        ? tr("Potrivire exactă — termen mediu real {a} zile", { a: groundTruth.avgPaymentTermDays })
+        : `${d === 1 ? "Interval vecin" : tr("La {a} intervale distanță", { a: d })} — termen mediu real ${groundTruth.avgPaymentTermDays} zile`;
   }
   items.push({
     id: "paymentTerm",
-    question: "Termenul mediu de plată oferit clienților",
+    question: tr("Termenul mediu de plată oferit clienților"),
     userAnswer: labelOf(PAYMENT_TERM_BUCKETS, answers.paymentTerm),
     truthAnswer: labelOf(PAYMENT_TERM_BUCKETS, truthTerm),
     detail: q2Detail,
@@ -194,17 +195,17 @@ export function evaluateFinancialQuiz(
   // Q3 — top client share (max 20)
   const truthShare = clientShareToBucket(groundTruth.topClientSharePct);
   let q3 = 0;
-  let q3Detail = "Niciun răspuns.";
+  let q3Detail = tr("Niciun răspuns.");
   if (answers.topClientShare) {
     const d = Math.abs(
       indexOf(CLIENT_SHARE_BUCKETS, answers.topClientShare) - indexOf(CLIENT_SHARE_BUCKETS, truthShare),
     );
     q3 = scoreBucketDistance(d, 20, 10);
-    q3Detail = `${d === 0 ? "Potrivire exactă" : d === 1 ? "Prag vecin" : `La ${d} praguri distanță`} — ${groundTruth.topClientName} are ${pct(groundTruth.topClientSharePct)} din vânzări`;
+    q3Detail = `${d === 0 ? "Potrivire exactă" : d === 1 ? "Prag vecin" : tr("La {a} praguri distanță", { a: d })} — ${groundTruth.topClientName} are ${pct(groundTruth.topClientSharePct)} din vânzări`;
   }
   items.push({
     id: "topClientShare",
-    question: "Ponderea celui mai mare client în totalul vânzărilor",
+    question: tr("Ponderea celui mai mare client în totalul vânzărilor"),
     userAnswer: labelOf(CLIENT_SHARE_BUCKETS, answers.topClientShare),
     truthAnswer: labelOf(CLIENT_SHARE_BUCKETS, truthShare),
     detail: q3Detail,
@@ -218,17 +219,17 @@ export function evaluateFinancialQuiz(
   const q4 = rank === 0 ? 12 : rank === 1 || rank === 2 ? 6 : 0;
   items.push({
     id: "mainSupplier",
-    question: "Principalul furnizor după valoarea achizițiilor",
+    question: tr("Principalul furnizor după valoarea achizițiilor"),
     userAnswer: answers.mainSupplier ?? "—",
     truthAnswer: ranked[0]?.name ?? "—",
     detail:
       rank === 0
-        ? `Corect — ${ron(ranked[0].purchaseValue)} achiziții`
+        ? tr("Corect — {a} achiziții", { a: ron(ranked[0].purchaseValue) })
         : rank > 0
-          ? `Furnizorul ales este #${rank + 1} în e-Factura (${ron(ranked[rank].purchaseValue)})`
+          ? tr("Furnizorul ales este #{a} în e-Factura ({b})", { a: rank + 1, b: ron(ranked[rank].purchaseValue) })
           : answers.mainSupplier
-            ? "Acest nume nu apare în top furnizori e-Factura"
-            : "Niciun răspuns.",
+            ? tr("Acest nume nu apare în top furnizori e-Factura")
+            : tr("Niciun răspuns."),
     points: q4,
     maxPoints: 12,
   });
@@ -238,11 +239,11 @@ export function evaluateFinancialQuiz(
   const q5 = answers.hasSignificantCreditNotes === truthStorno ? 8 : 0;
   items.push({
     id: "creditNotes",
-    question: "Facturi stornate semnificative (>5%, cod 381) în ultimele 3 luni",
+    question: tr("Facturi stornate semnificative (>5%, cod 381) în ultimele 3 luni"),
     userAnswer:
       answers.hasSignificantCreditNotes === null ? "—" : answers.hasSignificantCreditNotes ? "Da" : "Nu",
     truthAnswer: truthStorno ? "Da" : "Nu",
-    detail: `Stornările reprezintă ${pct(groundTruth.creditNotesSharePct)} din totalul emis`,
+    detail: tr("Stornările reprezintă {a} din totalul emis", { a: pct(groundTruth.creditNotesSharePct) }),
     points: q5,
     maxPoints: 8,
   });
@@ -257,9 +258,9 @@ export function evaluateFinancialQuiz(
   ].filter(Boolean).length;
   const { level, label } = quizLevel(total);
   const flags: string[] = [];
-  if (answers.revenueEstimate !== null && q1.points === 0) flags.push("Lipsă control financiar: cifra de afaceri estimată diferă cu peste 35% de e-Factura.");
-  if (level === "partial") flags.push("Vizibilitate parțială: monitorizează lunar încasările și concentrarea pe clienți.");
-  if (level === "deconectat") flags.push("Deconectare de la cifre: se aplică kill-switch-ul de guvernanță (-10 puncte din scorul final).");
+  if (answers.revenueEstimate !== null && q1.points === 0) flags.push(tr("Lipsă control financiar: cifra de afaceri estimată diferă cu peste 35% de e-Factura."));
+  if (level === "partial") flags.push(tr("Vizibilitate parțială: monitorizează lunar încasările și concentrarea pe clienți."));
+  if (level === "deconectat") flags.push(tr("Deconectare de la cifre: se aplică kill-switch-ul de guvernanță (-10 puncte din scorul final)."));
 
   return { total, items, answered, level, levelLabel: label, flags };
 }
@@ -277,10 +278,10 @@ export function evaluateInvestment(
   const purpose = INVESTMENT_PURPOSES.find((p) => p.value === input.purpose);
   items.push({
     id: "purpose",
-    question: "Destinația principală a finanțării",
+    question: tr("Destinația principală a finanțării"),
     userAnswer: purpose?.label ?? "—",
-    truthAnswer: "Creștere / eficiență măsurabilă",
-    detail: purpose ? purpose.hint : "Niciun răspuns.",
+    truthAnswer: tr("Creștere / eficiență măsurabilă"),
+    detail: purpose ? purpose.hint : tr("Niciun răspuns."),
     points: purpose?.points ?? 0,
     maxPoints: 50,
   });
@@ -291,7 +292,7 @@ export function evaluateInvestment(
     id: "ownContribution",
     question: "Aportul propriu / avans",
     userAnswer: own === null ? "—" : pct(own),
-    truthAnswer: "peste 20%",
+    truthAnswer: tr("peste 20%"),
     detail: own === null ? "Niciun răspuns." : own > 20 ? "Implicare puternică a acționarilor" : own >= 10 ? "Aport moderat (10-20%)" : "Aport sub 10% — risc transferat integral băncii",
     points: q2,
     maxPoints: 30,
@@ -304,13 +305,13 @@ export function evaluateInvestment(
   const overLeveragedRequest = amount > 0 && r > 0.5;
   items.push({
     id: "leverage",
-    question: "Suma solicitată vs. cifra de afaceri anualizată",
+    question: tr("Suma solicitată vs. cifra de afaceri anualizată"),
     userAnswer: input.requestedAmount === null ? "—" : ron(amount),
     truthAnswer: `max. 25% = ${ron(annualizedRevenue * 0.25)}`,
     detail:
       amount > 0 && Number.isFinite(ratio)
-        ? `${ron(amount)} reprezintă ${pct(ratio * 100)} din CA anualizată (${ron(annualizedRevenue)})${overLeveragedRequest ? " — cerere supra-îndatorată" : ""}`
-        : "Sumă invalidă.",
+        ? tr("{a} reprezintă {b} din CA anualizată ({c}){d}", { a: ron(amount), b: pct(ratio * 100), c: ron(annualizedRevenue), d: overLeveragedRequest ? " — cerere supra-îndatorată" : "" })
+        : tr("Sumă invalidă."),
     points: q3,
     maxPoints: 20,
   });
@@ -448,8 +449,8 @@ export function courtCounties(institutie: string): string[] {
 export type IdentityConfidence = "ridicata" | "medie" | "scazuta";
 
 export const CONFIDENCE_LABEL: Record<IdentityConfidence, string> = {
-  ridicata: "Identitate sigură",
-  medie: "Identitate probabilă",
+  ridicata: tr("Identitate sigură"),
+  medie: tr("Identitate probabilă"),
   scazuta: "Probabil omonim",
 };
 
@@ -468,14 +469,14 @@ export function assessIdentity(input: IdentityInput): { confidence: IdentityConf
   if (input.matchedBy === "firma") {
     return {
       confidence: "ridicata",
-      reasons: ["Denumirea firmei este unică în Registrul Comerțului, iar numele din dosar se potrivește exact."],
+      reasons: [tr("Denumirea firmei este unică în Registrul Comerțului, iar numele din dosar se potrivește exact.")],
     };
   }
-  const noCnp = "Portalul nu publică CNP-ul, deci numele singur nu dovedește că e aceeași persoană.";
+  const noCnp = tr("Portalul nu publică CNP-ul, deci numele singur nu dovedește că e aceeași persoană.");
   if (input.companyName && input.partyNames.some((n) => partyNameExact(n, input.companyName, "firma"))) {
     return {
       confidence: "ridicata",
-      reasons: [`${noCnp} Firma apare și ea ca parte în același dosar: legătură directă cu administratorul.`],
+      reasons: [tr("{a} Firma apare și ea ca parte în același dosar: legătură directă cu administratorul.", { a: noCnp })],
     };
   }
   const area = courtCounties(input.institutie);
@@ -484,19 +485,19 @@ export function assessIdentity(input: IdentityInput): { confidence: IdentityConf
     return {
       confidence: "medie",
       reasons: [
-        `${noCnp} ${!county ? "Județul sediului firmei nu e completat" : "Județul instanței nu a putut fi stabilit"}, deci localizarea nu poate fi comparată.`,
+        tr("{a} {b}, deci localizarea nu poate fi comparată.", { a: noCnp, b: !county ? "Județul sediului firmei nu e completat" : tr("Județul instanței nu a putut fi stabilit") }),
       ],
     };
   }
   if (area.includes(county)) {
     return {
       confidence: "medie",
-      reasons: [`${noCnp} Instanța este în zona sediului firmei (județul ${county}), deci e plauzibil să fie administratorul, dar poate fi și un omonim din același județ.`],
+      reasons: [tr("{a} Instanța este în zona sediului firmei (județul {b}), deci e plauzibil să fie administratorul, dar poate fi și un omonim din același județ.", { a: noCnp, b: county })],
     };
   }
   return {
     confidence: "scazuta",
-    reasons: [`${noCnp} Instanța este în ${area.length > 1 ? `regiunea ${area.join(", ")}` : `județul ${area[0]}`}, iar firma are sediul în județul ${county}: probabil un omonim.`],
+    reasons: [`${noCnp} Instanța este în ${area.length > 1 ? `regiunea ${area.join(", ")}` : tr("județul {a}", { a: area[0] })}, iar firma are sediul în județul ${county}: probabil un omonim.`],
   };
 }
 
@@ -526,10 +527,10 @@ export function caseImpact(c: ImpactCase): { severity: SeverityLevel; deduction:
 /** Short impact text for a case badge, e.g. "-4 p (din 8) până la confirmare". */
 export function impactLabel(c: ImpactCase) {
   const eff = caseImpact(c);
-  const full = c.severity === 4 ? "scor legal 0" : `-${c.deduction} p`;
+  const full = c.severity === 4 ? tr("scor legal 0") : `-${c.deduction} p`;
   if (eff.severity === c.severity && eff.deduction === c.deduction) return full;
-  if (c.userVerdict === "contestat") return "0 p (contestat)";
-  return `${eff.deduction === 0 ? "0 p" : `-${eff.deduction} p`} până la confirmare (complet: ${full})`;
+  if (c.userVerdict === "contestat") return tr("0 p (contestat)");
+  return `${eff.deduction === 0 ? "0 p" : `-${eff.deduction} p`} ${tr("până la confirmare (complet: {f})", { f: full })}`;
 }
 
 /** Roles where the case is directed AGAINST the searched party. */
@@ -574,18 +575,18 @@ const PROCEDURAL_PENAL_RE =
   /camera preliminara|masur|arestare|control judiciar|reabilitare|contestatie|plangere|liberare|confirmare|desfiintare inscrisuri|revizuire|contopire|inlocuire|amanare(a)? executar|intrerupere(a)? executar|sechestru|comisie rogatorie|recunoastere hotarare/;
 
 export const CASE_KIND_LABEL: Record<CaseKind, string> = {
-  insolventa: "Insolvență / faliment",
-  penal_economic: "Penal – infracțiune economică",
-  penal_grav: "Penal – infracțiune gravă",
-  penal_usor: "Penal – infracțiune ușoară",
-  penal_procedural: "Penal – procedură conexă",
-  contraventie: "Contravenție (amendă)",
-  executare: "Executare silită",
+  insolventa: tr("Insolvență / faliment"),
+  penal_economic: tr("Penal – infracțiune economică"),
+  penal_grav: tr("Penal – infracțiune gravă"),
+  penal_usor: tr("Penal – infracțiune ușoară"),
+  penal_procedural: tr("Penal – procedură conexă"),
+  contraventie: tr("Contravenție (amendă)"),
+  executare: tr("Executare silită"),
   civil_comercial: "Litigiu civil / comercial",
   fiscal: "Litigiu fiscal (ANAF / taxe)",
-  munca: "Litigiu de muncă / asigurări sociale",
+  munca: tr("Litigiu de muncă / asigurări sociale"),
   familie_patrimoniu: "Familie / patrimoniu personal",
-  altele: "Alt tip de dosar",
+  altele: tr("Alt tip de dosar"),
 };
 
 const isPenalKind = (k: CaseKind) => k.startsWith("penal");
@@ -724,9 +725,9 @@ function readVerdict(kind: CaseKind, obiect: string, roles: string[], hearings: 
   }
   if (!decision) {
     if (hearings.length === 0) {
-      return { outcome: "necunoscut", label: "Portalul nu are ședințe publicate pentru acest dosar – soluție necunoscută", isFinal: null, excerpt: "", date: "", nameFound: false, nextHearing };
+      return { outcome: "necunoscut", label: tr("Portalul nu are ședințe publicate pentru acest dosar – soluție necunoscută"), isFinal: null, excerpt: "", date: "", nameFound: false, nextHearing };
     }
-    return { outcome: "in_curs", label: nextHearing ? `În curs – următorul termen ${nextHearing}` : "În curs – fără soluție pe fond", isFinal: null, excerpt: "", date: "", nameFound: false, nextHearing };
+    return { outcome: "in_curs", label: nextHearing ? tr("În curs – următorul termen {a}", { a: nextHearing }) : tr("În curs – fără soluție pe fond"), isFinal: null, excerpt: "", date: "", nameFound: false, nextHearing };
   }
 
   const raw = decision.solutieSumar || decision.solutie;
@@ -769,77 +770,77 @@ function readVerdict(kind: CaseKind, obiect: string, roles: string[], hearings: 
 
   // "Admite excepţia necompetenţei... declină competenţa" starts with "admite" but only moves the case.
   if (/declin/.test(solField) || (/declin\w* competent/.test(w) && !/condamn|achit|inceteaza procesul/.test(w))) {
-    return { ...base, isFinal: null, nextHearing, outcome: "in_curs", label: "Dosar trimis la altă instanță (declinare de competență) – în curs" };
+    return { ...base, isFinal: null, nextHearing, outcome: "in_curs", label: tr("Dosar trimis la altă instanță (declinare de competență) – în curs") };
   }
 
   if (isPenalKind(kind)) {
     if (/reabilitare/.test(o)) {
-      return { ...base, nextHearing, ...(/admite/.test(w) ? { outcome: "castigat", label: "Reabilitare admisă – antecedentele se consideră șterse" } : { outcome: "necunoscut", label: "Cerere de reabilitare (condamnare anterioară)" }) };
+      return { ...base, nextHearing, ...(/admite/.test(w) ? { outcome: "castigat", label: tr("Reabilitare admisă – antecedentele se consideră șterse") } : { outcome: "necunoscut", label: tr("Cerere de reabilitare (condamnare anterioară)") }) };
     }
     if (/clasare|neurmarire|netrimitere/.test(o)) {
-      if (/respinge/.test(w)) return { ...base, nextHearing, outcome: "clasat", label: "Clasare menținută – plângerea împotriva clasării a fost respinsă" };
-      if (/admite/.test(w)) return { ...base, nextHearing, outcome: "in_curs", label: "Clasarea a fost desființată – cercetarea continuă" };
+      if (/respinge/.test(w)) return { ...base, nextHearing, outcome: "clasat", label: tr("Clasare menținută – plângerea împotriva clasării a fost respinsă") };
+      if (/admite/.test(w)) return { ...base, nextHearing, outcome: "in_curs", label: tr("Clasarea a fost desființată – cercetarea continuă") };
     }
     if (/renuntar\w* (la )?urmari/.test(o)) {
-      if (/admite|confirma/.test(w)) return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: "Renunțare la urmărire penală confirmată (fapta reținută, fără proces)" };
-      if (/respinge|infirma/.test(w)) return { ...base, nextHearing, outcome: "in_curs", label: "Renunțarea la urmărire a fost infirmată – dosarul continuă" };
+      if (/admite|confirma/.test(w)) return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: tr("Renunțare la urmărire penală confirmată (fapta reținută, fără proces)") };
+      if (/respinge|infirma/.test(w)) return { ...base, nextHearing, outcome: "in_curs", label: tr("Renunțarea la urmărire a fost infirmată – dosarul continuă") };
     }
-    if (/achit/.test(w)) return { ...base, nextHearing, outcome: "achitat", label: "Achitat – instanța a constatat nevinovăția" };
-    if (/clasa/.test(w)) return { ...base, nextHearing, outcome: "clasat", label: "Clasat – fără trimitere în judecată" };
+    if (/achit/.test(w)) return { ...base, nextHearing, outcome: "achitat", label: tr("Achitat – instanța a constatat nevinovăția") };
+    if (/clasa/.test(w)) return { ...base, nextHearing, outcome: "clasat", label: tr("Clasat – fără trimitere în judecată") };
     if (/renunt\w* la aplicarea pedepsei|renuntarea la aplicarea/.test(w))
-      return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: "Renunțare la aplicarea pedepsei (vinovăție reținută, fără pedeapsă)" };
+      return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: tr("Renunțare la aplicarea pedepsei (vinovăție reținută, fără pedeapsă)") };
     if (/aman\w* aplicarea pedepsei|amanarea aplicarii|amana aplicarea/.test(w))
-      return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: "Amânarea aplicării pedepsei (vinovăție reținută, fără antecedente dacă respectă termenul)" };
+      return { ...base, nextHearing, outcome: "vinovat_fara_pedeapsa", label: tr("Amânarea aplicării pedepsei (vinovăție reținută, fără antecedente dacă respectă termenul)") };
     if (/inceta\w* procesul|incetarea procesului|incetat procesul/.test(w)) {
       const why = /impac/.test(w)
-        ? "împăcarea părților"
+        ? tr("împăcarea părților")
         : /retrager/.test(w)
-          ? "retragerea plângerii"
+          ? tr("retragerea plângerii")
           : /amnisti/.test(w)
             ? "amnistie"
             : /deces/.test(w)
               ? "deces"
               : /prescri|16 alin\.? ?\(?1\)? lit\.? ?f|154 alin/.test(w)
-                ? "prescripția răspunderii penale"
+                ? tr("prescripția răspunderii penale")
                 : "motiv procedural";
-      return { ...base, nextHearing, outcome: "incetat", label: `Proces penal încetat – ${why} (fără verdict de vinovăție)` };
+      return { ...base, nextHearing, outcome: "incetat", label: tr("Proces penal încetat – {a} (fără verdict de vinovăție)", { a: why }) };
     }
     if (/condamn|stabileste pedeapsa|aplica pedeapsa|pedeapsa (de|amenzii|rezultanta)/.test(w)) {
       const prison = original(/\d[^.;,]{0,38}?inchisoare/);
       const fine = /amenzii penale|zile-amenda/.test(w);
       const suspended = /suspendar\w* (sub supraveghere|executarii|conditionat)/.test(w);
-      const detail = fine ? "amendă penală" : prison ? `${prison}${suspended ? " cu suspendare" : ""}` : suspended ? "pedeapsă cu suspendare" : "pedeapsă aplicată";
+      const detail = fine ? "amendă penală" : prison ? `${prison}${suspended ? " cu suspendare" : ""}` : suspended ? "pedeapsă cu suspendare" : tr("pedeapsă aplicată");
       return { ...base, nextHearing, outcome: "condamnat", label: `Condamnat – ${detail}` };
     }
     if (/admis apel|admite apelul|admis recurs|admite recursul/.test(w)) {
-      return { ...base, nextHearing, outcome: "necunoscut", label: "Apel admis – soluția de fond a fost modificată, iar noua soluție nu a putut fi citită din extras" };
+      return { ...base, nextHearing, outcome: "necunoscut", label: tr("Apel admis – soluția de fond a fost modificată, iar noua soluție nu a putut fi citită din extras") };
     }
-    return { ...base, nextHearing, outcome: nextHearing ? "in_curs" : "necunoscut", label: nextHearing ? `În curs – următorul termen ${nextHearing}` : `Soluție: ${decision.solutie || "neclară"}` };
+    return { ...base, nextHearing, outcome: nextHearing ? "in_curs" : "necunoscut", label: nextHearing ? tr("În curs – următorul termen {a}", { a: nextHearing }) : tr("Soluție: {a}", { a: decision.solutie || "neclară" }) };
   }
 
   if (kind === "contraventie" && /transformare/.test(o)) {
     if (/^admi/.test(verb) || /inlocuir|munca in folosul/.test(w)) {
-      return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: "Amendă neplătită – instanța a înlocuit-o cu muncă în folosul comunității" };
+      return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: tr("Amendă neplătită – instanța a înlocuit-o cu muncă în folosul comunității") };
     }
     if (/respin|nefondat|anuleaza|ia act|perim/.test(verb)) {
-      return { ...base, nextHearing, outcome: "inchis_fara_fond", label: "Cererea de transformare a amenzii a fost respinsă / închisă" };
+      return { ...base, nextHearing, outcome: "inchis_fara_fond", label: tr("Cererea de transformare a amenzii a fost respinsă / închisă") };
     }
   }
 
   if (kind === "contraventie") {
-    if (/avertisment/.test(w) && /admite|inlocuieste|aplica/.test(w)) return { ...base, nextHearing, outcome: "avertisment", label: "Amenda înlocuită cu avertisment" };
+    if (/avertisment/.test(w) && /admite|inlocuieste|aplica/.test(w)) return { ...base, nextHearing, outcome: "avertisment", label: tr("Amenda înlocuită cu avertisment") };
     const annulsFine = /^admi/.test(verb) || (/^anuleaza/.test(verb) && /anuleaza (procesul|pv|actul)/.test(w));
     if (annulsFine) {
       return { ...base, nextHearing, outcome: "sanctiune_anulata", label: /in parte/.test(w) ? "Plângere admisă în parte – sancțiune redusă" : "Amendă anulată – plângerea a fost admisă" };
     }
-    if (/respin|nefondat/.test(verb)) return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: "Amendă menținută – plângerea a fost respinsă" };
-    if (/anuleaza|perim|ia act|renunta/.test(verb)) return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: "Plângerea nu a fost judecată pe fond – amenda rămâne" };
-    return { ...base, nextHearing, outcome: "necunoscut", label: `Soluție: ${decision.solutie || "neclară"}` };
+    if (/respin|nefondat/.test(verb)) return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: tr("Amendă menținută – plângerea a fost respinsă") };
+    if (/anuleaza|perim|ia act|renunta/.test(verb)) return { ...base, nextHearing, outcome: "sanctiune_mentinuta", label: tr("Plângerea nu a fost judecată pe fond – amenda rămâne") };
+    return { ...base, nextHearing, outcome: "necunoscut", label: tr("Soluție: {a}", { a: decision.solutie || "neclară" }) };
   }
 
   if (/ia act|perim|renunta/.test(verb) || /^anuleaza/.test(verb))
-    return { ...base, nextHearing, outcome: "inchis_fara_fond", label: "Închis fără judecată pe fond (renunțare / perimare / anulare)" };
-  if (/tranzact|expedient/.test(w)) return { ...base, nextHearing, outcome: "inchis_fara_fond", label: "Închis prin tranzacție (înțelegere între părți)" };
+    return { ...base, nextHearing, outcome: "inchis_fara_fond", label: tr("Închis fără judecată pe fond (renunțare / perimare / anulare)") };
+  if (/tranzact|expedient/.test(w)) return { ...base, nextHearing, outcome: "inchis_fara_fond", label: tr("Închis prin tranzacție (înțelegere între părți)") };
 
   if (/^admi|aproba|deschide|dispune/.test(verb)) {
     const ok = won(true);
@@ -849,14 +850,14 @@ function readVerdict(kind: CaseKind, obiect: string, roles: string[], hearings: 
     const ok = won(false);
     return { ...base, nextHearing, outcome: ok ? "castigat" : "pierdut", label: ok ? "Câștigat – cererea împotriva părții căutate a fost respinsă" : "Pierdut – cererea părții căutate a fost respinsă" };
   }
-  if (/inchide/.test(verb) && kind === "insolventa") return { ...base, nextHearing, outcome: "pierdut", label: "Procedură de insolvență închisă (a avut loc)" };
-  return { ...base, nextHearing, outcome: nextHearing ? "in_curs" : "necunoscut", label: nextHearing ? `În curs – următorul termen ${nextHearing}` : `Soluție: ${decision.solutie || "neclară"}` };
+  if (/inchide/.test(verb) && kind === "insolventa") return { ...base, nextHearing, outcome: "pierdut", label: tr("Procedură de insolvență închisă (a avut loc)") };
+  return { ...base, nextHearing, outcome: nextHearing ? "in_curs" : "necunoscut", label: nextHearing ? tr("În curs – următorul termen {a}", { a: nextHearing }) : tr("Soluție: {a}", { a: decision.solutie || "neclară" }) };
 }
 
 // ---- Severity & deduction --------------------------------------------------
 
 export const SEVERITY_LABEL: Record<SeverityLevel, string> = {
-  0: "Fără impact",
+  0: tr("Fără impact"),
   1: "Minor",
   2: "Moderat",
   3: "Grav",
@@ -873,18 +874,18 @@ export const OLD_CASE_YEARS = 5;
 const clampLevel = (n: number) => Math.max(0, Math.min(4, n)) as SeverityLevel;
 
 const KIND_WHY: Record<CaseKind, string> = {
-  insolventa: "insolvența firmei înseamnă că nu și-a putut plăti datoriile – cel mai puternic semnal negativ pentru o bancă",
-  penal_economic: "infracțiunile economice (evaziune, înșelăciune, fals, delapidare, mită) privesc direct integritatea în afaceri",
-  penal_grav: "infracțiune de drept comun gravă (violență, furt, droguri) – risc reputațional și de continuitate a conducerii",
-  penal_usor: "infracțiune cu pericol redus (ex. rutieră, ordine publică) – fără legătură directă cu afacerea",
-  penal_procedural: "cerere/măsură dintr-un dosar penal; infracțiunea de bază nu e precizată în obiect",
-  contraventie: "contravenție (amendă) – faptă administrativă, nu infracțiune; nu creează antecedente penale",
-  executare: "executarea silită arată o datorie neplătită la scadență, deja stabilită printr-un titlu",
-  civil_comercial: "litigiu comercial/civil – poate indica datorii contestate față de parteneri",
-  fiscal: "dispută cu fiscul – semnal de obligații fiscale contestate sau restante",
-  munca: "litigiu de muncă / asigurări – impact redus asupra capacității de rambursare",
-  familie_patrimoniu: "chestiune personală sau patrimonială (succesiune, partaj, divorț) – nu privește afacerea",
-  altele: "dosar fără încadrare clară – tratat cu impact minor",
+  insolventa: tr("insolvența firmei înseamnă că nu și-a putut plăti datoriile – cel mai puternic semnal negativ pentru o bancă"),
+  penal_economic: tr("infracțiunile economice (evaziune, înșelăciune, fals, delapidare, mită) privesc direct integritatea în afaceri"),
+  penal_grav: tr("infracțiune de drept comun gravă (violență, furt, droguri) – risc reputațional și de continuitate a conducerii"),
+  penal_usor: tr("infracțiune cu pericol redus (ex. rutieră, ordine publică) – fără legătură directă cu afacerea"),
+  penal_procedural: tr("cerere/măsură dintr-un dosar penal; infracțiunea de bază nu e precizată în obiect"),
+  contraventie: tr("contravenție (amendă) – faptă administrativă, nu infracțiune; nu creează antecedente penale"),
+  executare: tr("executarea silită arată o datorie neplătită la scadență, deja stabilită printr-un titlu"),
+  civil_comercial: tr("litigiu comercial/civil – poate indica datorii contestate față de parteneri"),
+  fiscal: tr("dispută cu fiscul – semnal de obligații fiscale contestate sau restante"),
+  munca: tr("litigiu de muncă / asigurări – impact redus asupra capacității de rambursare"),
+  familie_patrimoniu: tr("chestiune personală sau patrimonială (succesiune, partaj, divorț) – nu privește afacerea"),
+  altele: tr("dosar fără încadrare clară – tratat cu impact minor"),
 };
 
 function baseLevel(kind: CaseKind, obiect: string): SeverityLevel {
@@ -914,55 +915,55 @@ function levelFor(kind: CaseKind, base: SeverityLevel, outcome: CaseOutcome, obi
   const o = normalizeRo(obiect);
   if (/reabilitare/.test(o)) {
     return outcome === "castigat"
-      ? { level: 0, why: "reabilitarea șterge efectele condamnării anterioare" }
-      : { level: 1, why: "cererea de reabilitare arată o condamnare mai veche, deja executată" };
+      ? { level: 0, why: tr("reabilitarea șterge efectele condamnării anterioare") }
+      : { level: 1, why: tr("cererea de reabilitare arată o condamnare mai veche, deja executată") };
   }
   if (kind === "contraventie" && /transformare/.test(o) && outcome === "sanctiune_mentinuta") {
-    return { level: 2, why: "amenda nu a fost plătită nici după ce a devenit executorie – semnal de disciplină de plată slabă" };
+    return { level: 2, why: tr("amenda nu a fost plătită nici după ce a devenit executorie – semnal de disciplină de plată slabă") };
   }
   if (isPenalKind(kind)) {
     switch (outcome) {
       case "achitat":
       case "clasat":
-        return { level: 0, why: "nu există vinovăție reținută – dosarul nu se penalizează" };
+        return { level: 0, why: tr("nu există vinovăție reținută – dosarul nu se penalizează") };
       case "castigat":
-        return { level: 0, why: "reabilitarea șterge efectele condamnării anterioare" };
+        return { level: 0, why: tr("reabilitarea șterge efectele condamnării anterioare") };
       case "incetat":
-        return { level: clampLevel(Math.max(1, base - 1)), why: "procesul s-a oprit fără condamnare, dar fapta a fost cercetată – un nivel sub cel de bază" };
+        return { level: clampLevel(Math.max(1, base - 1)), why: tr("procesul s-a oprit fără condamnare, dar fapta a fost cercetată – un nivel sub cel de bază") };
       case "vinovat_fara_pedeapsa":
         return kind === "penal_economic"
-          ? { level: 4, why: "vinovăția pentru o faptă economică a fost reținută, chiar dacă fără pedeapsă" }
-          : { level: clampLevel(Math.max(1, base - 1)), why: "vinovăție reținută, dar fără pedeapsă executată – un nivel sub cel de bază" };
+          ? { level: 4, why: tr("vinovăția pentru o faptă economică a fost reținută, chiar dacă fără pedeapsă") }
+          : { level: clampLevel(Math.max(1, base - 1)), why: tr("vinovăție reținută, dar fără pedeapsă executată – un nivel sub cel de bază") };
       case "condamnat":
         return kind === "penal_usor" || kind === "penal_procedural"
-          ? { level: 3, why: "condamnare definitivă sau în primă instanță – urcă un nivel" }
-          : { level: base, why: "condamnare pentru o faptă din această categorie" };
+          ? { level: 3, why: tr("condamnare definitivă sau în primă instanță – urcă un nivel") }
+          : { level: base, why: tr("condamnare pentru o faptă din această categorie") };
       case "in_curs":
-        return { level: base, why: "dosar în desfășurare: se aplică prezumția de nevinovăție, dar banca va trata riscul ca activ" };
+        return { level: base, why: tr("dosar în desfășurare: se aplică prezumția de nevinovăție, dar banca va trata riscul ca activ") };
       default:
-        return { level: base, why: "soluția nu a putut fi citită clar – se aplică nivelul de bază (conservator)" };
+        return { level: base, why: tr("soluția nu a putut fi citită clar – se aplică nivelul de bază (conservator)") };
     }
   }
   switch (outcome) {
     case "castigat":
-      if (kind === "insolventa") return { level: 1, why: "cererea de insolvență a fost respinsă, dar arată o restanță reclamată de un creditor" };
-      if (kind === "executare") return { level: 1, why: "contestația la executare a fost câștigată, dar a existat o executare pornită" };
-      return { level: 0, why: "partea căutată a câștigat – nu se penalizează" };
+      if (kind === "insolventa") return { level: 1, why: tr("cererea de insolvență a fost respinsă, dar arată o restanță reclamată de un creditor") };
+      if (kind === "executare") return { level: 1, why: tr("contestația la executare a fost câștigată, dar a existat o executare pornită") };
+      return { level: 0, why: tr("partea căutată a câștigat – nu se penalizează") };
     case "sanctiune_anulata":
-      return { level: 0, why: "amenda a fost anulată de instanță – nu se penalizează" };
+      return { level: 0, why: tr("amenda a fost anulată de instanță – nu se penalizează") };
     case "inchis_fara_fond":
-      return { level: 0, why: "dosarul s-a închis fără o hotărâre împotriva părții căutate" };
+      return { level: 0, why: tr("dosarul s-a închis fără o hotărâre împotriva părții căutate") };
     case "pierdut":
-      return { level: base, why: "hotărâre în defavoarea părții căutate" };
+      return { level: base, why: tr("hotărâre în defavoarea părții căutate") };
     case "sanctiune_mentinuta":
     case "avertisment":
       return { level: 1, why: outcome === "avertisment" ? "doar avertisment, fără sumă de plată" : "amenda a rămas, dar este o sancțiune administrativă minoră" };
     case "in_curs":
       return kind === "insolventa" || kind === "executare"
-        ? { level: base, why: "procedură deschisă / în desfășurare împotriva părții căutate" }
-        : { level: clampLevel(Math.max(base === 0 ? 0 : 1, base - 1)), why: "litigiu nesoluționat – un nivel sub cel de bază până la hotărâre" };
+        ? { level: base, why: tr("procedură deschisă / în desfășurare împotriva părții căutate") }
+        : { level: clampLevel(Math.max(base === 0 ? 0 : 1, base - 1)), why: tr("litigiu nesoluționat – un nivel sub cel de bază până la hotărâre") };
     default:
-      return { level: base, why: "soluția nu a putut fi citită clar – se aplică nivelul de bază (conservator)" };
+      return { level: base, why: tr("soluția nu a putut fi citită clar – se aplică nivelul de bază (conservator)") };
   }
 }
 
@@ -985,29 +986,29 @@ export function analyzeCase(input: CaseAnalysisInput) {
   const base = baseLevel(kind, input.obiect);
 
   const reasons: string[] = [];
-  reasons.push(`Tip: ${CASE_KIND_LABEL[kind]} – ${KIND_WHY[kind]}. Nivel de bază: ${base} (${SEVERITY_LABEL[base]}).`);
+  reasons.push(tr("Tip: {a} – {b}. Nivel de bază: {c} ({d}).", { a: CASE_KIND_LABEL[kind], b: KIND_WHY[kind], c: base, d: SEVERITY_LABEL[base] }));
 
   const roles = input.partyRoles.join(" / ") || "necunoscut";
   let level: SeverityLevel;
   if (roleCategory === "nevizat") {
     level = 0;
-    reasons.push(`Rol: ${roles} – partea căutată este de cealaltă parte (creditor, reclamant, victimă), deci dosarul nu este îndreptat împotriva ei.`);
+    reasons.push(tr("Rol: {a} – partea căutată este de cealaltă parte (creditor, reclamant, victimă), deci dosarul nu este îndreptat împotriva ei.", { a: roles }));
   } else {
     // Third parties (Intervenient, Intimat...) in ordinary lawsuits weigh one level less;
     // in penal / insolvency cases an unclear role stays at full weight (conservative).
     const softenUnknown = roleCategory === "necunoscut" && !isPenalKind(kind) && kind !== "insolventa";
     reasons.push(
       roleCategory === "vizat"
-        ? `Rol: ${roles} – dosarul este îndreptat împotriva părții căutate.`
+        ? tr("Rol: {a} – dosarul este îndreptat împotriva părții căutate.", { a: roles })
         : softenUnknown
-          ? `Rol: ${roles} – parte terță sau rol ambiguu într-un litigiu obișnuit; se scade un nivel.`
-          : `Rol: ${roles} – rol ambiguu; tratat conservator, ca și cum dosarul ar fi împotriva părții căutate.`,
+          ? tr("Rol: {a} – parte terță sau rol ambiguu într-un litigiu obișnuit; se scade un nivel.", { a: roles })
+          : tr("Rol: {a} – rol ambiguu; tratat conservator, ca și cum dosarul ar fi împotriva părții căutate.", { a: roles }),
     );
     const lv = levelFor(kind, base, verdict.outcome, input.obiect);
     level = softenUnknown ? clampLevel(lv.level - 1) : lv.level;
     reasons.push(`Soluție: ${verdict.label}${verdict.date ? ` (${verdict.date})` : ""} – ${lv.why}.`);
     if (verdict.date && !verdict.nameFound && verdict.excerpt) {
-      reasons.push("Atenție: hotărârea nu menționează nominal partea căutată; s-a folosit soluția generală a dosarului.");
+      reasons.push(tr("Atenție: hotărârea nu menționează nominal partea căutată; s-a folosit soluția generală a dosarului."));
     }
   }
 
@@ -1016,14 +1017,14 @@ export function analyzeCase(input: CaseAnalysisInput) {
   const ageYears = resolved ? (Date.parse(today) - Date.parse(verdict.date)) / (365.25 * 864e5) : 0;
   if (level > 0 && level < 4 && ageYears > OLD_CASE_YEARS) {
     deduction = Math.round(deduction / 2);
-    reasons.push(`Soluție mai veche de ${OLD_CASE_YEARS} ani (${Math.floor(ageYears)} ani) – penalizarea se înjumătățește.`);
+    reasons.push(tr("Soluție mai veche de {a} ani ({b} ani) – penalizarea se înjumătățește.", { a: OLD_CASE_YEARS, b: Math.floor(ageYears) }));
   }
   reasons.push(
     level === 4
-      ? `Nivel ${level} – ${SEVERITY_LABEL[level]}: scorul legal devine 0 și se afișează alerta roșie de integritate.`
+      ? tr("Nivel {a} – {b}: scorul legal devine 0 și se afișează alerta roșie de integritate.", { a: level, b: SEVERITY_LABEL[level] })
       : level === 0
-        ? `Nivel 0 – ${SEVERITY_LABEL[0]}: 0 puncte scăzute.`
-        : `Nivel ${level} – ${SEVERITY_LABEL[level]}: -${deduction} puncte din scorul legal de 100.`,
+        ? tr("Nivel 0 – {a}: 0 puncte scăzute.", { a: SEVERITY_LABEL[0] })
+        : tr("Nivel {a} – {b}: -{c} puncte din scorul legal de 100.", { a: level, b: SEVERITY_LABEL[level], c: deduction }),
   );
 
   return {

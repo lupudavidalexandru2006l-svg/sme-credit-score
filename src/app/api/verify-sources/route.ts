@@ -5,6 +5,9 @@ import { computeHumanScore, verifyAllSources } from "@/lib/multi-source-verifier
 import { companyCounty } from "@/lib/scoringEngine";
 import { ensureCompany, getSupabase, saveVerificationReport } from "@/lib/supabase/server";
 
+/** Several external calls (ANAF, VIES, portal.just.ro): allow up to 30 s on serverless hosts. */
+export const maxDuration = 30;
+
 interface Body {
   /** The active company (preferred: the report is then stored on it in Supabase). */
   company?: Company;

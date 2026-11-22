@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, LoaderCircle, RotateCcw } from "lucide-react";
 import type { QuizKind } from "./AssessmentProvider";
 import { useAssessment } from "./AssessmentProvider";
+import { useLanguage } from "./LanguageProvider";
 import { Button, Card, CardHeader, ProgressBar } from "./ui";
 
 export interface QuizStep {
@@ -35,6 +36,8 @@ export function SequentialQuiz({
   result: ReactNode;
 }) {
   const { quizCompleted, completeQuiz } = useAssessment();
+  const { t } = useLanguage();
+  const sq = t.quiz.seq;
   const saved = quizCompleted[kind];
   const [phase, setPhase] = useState<Phase>(saved ? "completed" : "idle");
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -71,14 +74,14 @@ export function SequentialQuiz({
 
       {phase === "idle" && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-canvas p-5">
-          <p className="text-sm text-muted">{n} întrebări, una câte una. Rezultatul se salvează și va fi calculat la final (Pasul 4).</p>
+          <p className="min-w-0 flex-1 text-sm text-muted">{sq.intro(n)}</p>
           <Button
             onClick={() => {
               setCurrentQuestionIndex(0);
               setPhase("in_progress");
             }}
           >
-            Începe quiz-ul <ArrowRight size={14} />
+            {sq.start} <ArrowRight size={14} />
           </Button>
         </div>
       )}
@@ -87,22 +90,22 @@ export function SequentialQuiz({
         <div>
           <div className="mb-4">
             <p className="text-xs font-semibold text-muted">
-              Întrebarea {currentQuestionIndex + 1} din {n}
+              {sq.question(currentQuestionIndex + 1, n)}
             </p>
             <ProgressBar value={((currentQuestionIndex + 1) / n) * 100} tone="navy" className="mt-1.5" />
           </div>
           <div key={step.key}>{step.content}</div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
             <Button variant="secondary" onClick={() => setCurrentQuestionIndex((i) => i - 1)} disabled={currentQuestionIndex === 0}>
-              <ArrowLeft size={14} /> Înapoi
+              <ArrowLeft size={14} /> {t.common.back}
             </Button>
             {last ? (
               <Button onClick={finish} disabled={!step.answered || saving}>
-                {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />} Finalizează și salvează quiz-ul
+                {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Check size={14} />} {sq.finish}
               </Button>
             ) : (
               <Button onClick={() => setCurrentQuestionIndex((i) => i + 1)} disabled={!step.answered}>
-                Următoarea întrebare <ArrowRight size={14} />
+                {sq.next} <ArrowRight size={14} />
               </Button>
             )}
           </div>
@@ -114,7 +117,7 @@ export function SequentialQuiz({
           {result}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button variant="secondary" onClick={redo}>
-              <RotateCcw size={14} /> Refă quiz-ul
+              <RotateCcw size={14} /> {sq.redo}
             </Button>
             {note && <span className="text-xs font-medium text-navy-3">{note}</span>}
           </div>

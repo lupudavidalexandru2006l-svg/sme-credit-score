@@ -1,5 +1,7 @@
+import { tr } from "./i18n/tr.ts";
+import { getNumberLocale } from "./util.ts";
 /**
- * Afghankingz Credit — pricing, plan limits and feature gating. The ONE place to change a price or a limit.
+ * CrediFit — pricing, plan limits and feature gating. The ONE place to change a price or a limit.
  *
  * Pure module (no React / Next / I/O): used by the API routes, the provider and `node --test`.
  * Prices are in RON, VAT-exclusive; `yearly` is the monthly equivalent when billed annually (−20%).
@@ -36,12 +38,13 @@ export type Feature =
   | "spvSync"
   | "prioritySupport"
   | "whatIfSimulator"
-  | "stressTest";
+  | "stressTest"
+  | "portfolioDashboard";
 
 export interface PlanLimits {
   /** Companies (SRL) kept in the profile. `null` = unlimited. */
   maxCompanies: number | null;
-  /** e-Factura XML uploads per company. `null` = unlimited. */
+  /** e-Factura uploads per company. `null` = unlimited. */
   maxXmlUploads: number | null;
   /** Bank recommendations shown unblurred. `null` = all of them. */
   visibleBankRecommendations: number | null;
@@ -81,6 +84,7 @@ const NONE: Record<Feature, boolean> = {
   prioritySupport: false,
   whatIfSimulator: false,
   stressTest: false,
+  portfolioDashboard: false,
 };
 
 const PRO_FEATURES: Record<Feature, boolean> = {
@@ -112,7 +116,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
       { text: "1 firmă activă în profil" },
       { text: "Calcul Scor „Credit Ready” de bază (pilonii principali)" },
       { text: "Quiz de evaluare factor uman (5 întrebări)" },
-      { text: "Upload până la 3 facturi XML e-Factura (testare live)" },
+      { text: "Upload până la 3 facturi e-Factura (testare live)" },
       { text: "Previzualizare (top 2 acțiuni) din planul de 30–90 zile" },
       { text: "1 recomandare bancară generală" },
     ],
@@ -129,7 +133,7 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     features: PRO_FEATURES,
     includes: [
       { text: "Până la 3 firme (SRL-uri) gestionate simultan fără pierdere de date" },
-      { text: "Upload nelimitat de facturi XML e-Factura (UBL 2.1) cu recalculare în timp real" },
+      { text: "Upload nelimitat de facturi e-Factura (UBL 2.1) cu recalculare în timp real" },
       { text: "Verificare automată portal.just.ro (firmă + CEO/administrator) și alte 5 surse oficiale" },
       { text: "Audit complet al formulelor bancare (DSCR, DSO, stabilitate încasări, sezonalitate, concentrare)" },
       { text: "Comparație detaliată cu media sectorului (benchmark CAEN)" },
@@ -145,9 +149,10 @@ export const PLANS: Record<PlanTier, PlanDefinition> = {
     highlighted: false,
     cta: "Alege Business",
     limits: { maxCompanies: null, maxXmlUploads: null, visibleBankRecommendations: null, visibleActionItems: null, canSeeAllBanks: true, canExportPdf: true },
-    features: { ...PRO_FEATURES, riskAlerts: true, spvSync: true, prioritySupport: true },
+    features: { ...PRO_FEATURES, riskAlerts: true, spvSync: true, prioritySupport: true, portfolioDashboard: true },
     includes: [
       { text: "Firme (SRL-uri) nelimitate, cu selector rapid multi-company" },
+      { text: "Dashboard consolidat al portofoliului (scor, DSCR, concentrare și alerte pentru fiecare firmă)" },
       { text: "Toate funcționalitățile din Planul Pro" },
       { text: "Alerte automate de risc (DSCR < 1,25, concentrare client > 40%, stornări > 5%)" },
       { text: "Sincronizare automată SPV / e-Factura & Open Banking", roadmap: true },
@@ -286,11 +291,11 @@ export function riskAlerts(tier: PlanTier, m: { dscr: number; topClientSharePct:
   if (!canPerformAction(tier, "riskAlerts")) return [];
   const t = RISK_ALERT_THRESHOLDS;
   const alerts: string[] = [];
-  if (m.dscr < t.minDscr) alerts.push(`DSCR ${m.dscr.toLocaleString("ro-RO")}× a scăzut sub ${t.minDscr.toLocaleString("ro-RO")}×.`);
+  if (m.dscr < t.minDscr) alerts.push(tr("DSCR {a}× a scăzut sub {b}×.", { a: m.dscr.toLocaleString(getNumberLocale()), b: t.minDscr.toLocaleString(getNumberLocale()) }));
   if (m.topClientSharePct > t.maxTopClientSharePct)
-    alerts.push(`Concentrarea pe clientul principal (${m.topClientSharePct.toLocaleString("ro-RO")}%) depășește ${t.maxTopClientSharePct}%.`);
+    alerts.push(tr("Concentrarea pe clientul principal ({a}%) depășește {b}%.", { a: m.topClientSharePct.toLocaleString(getNumberLocale()), b: t.maxTopClientSharePct }));
   if (m.creditNotesSharePct > t.maxCreditNotesPct)
-    alerts.push(`Stornările (${m.creditNotesSharePct.toLocaleString("ro-RO")}%) depășesc ${t.maxCreditNotesPct}% din facturile emise.`);
+    alerts.push(tr("Stornările ({a}%) depășesc {b}% din facturile emise.", { a: m.creditNotesSharePct.toLocaleString(getNumberLocale()), b: t.maxCreditNotesPct }));
   return alerts;
 }
 
@@ -381,7 +386,7 @@ export const FEATURE_MATRIX: { category: string; rows: { label: string; cells: [
     category: "Analiză e-Factura & Scoring",
     rows: [
       { label: "Scor Credit Ready (S_Business, S_Uman, S_Investiție)", cells: [true, true, true, true] },
-      { label: "Upload facturi XML e-Factura (UBL 2.1)", cells: ["max. 3", "nelimitat", "nelimitat", "API"] },
+      { label: "Upload facturi e-Factura (UBL 2.1)", cells: ["max. 3", "nelimitat", "nelimitat", "API"] },
       { label: "Audit formule bancare (DSCR, DSO, sezonalitate, concentrare)", cells: ["piloni de bază", true, true, true] },
       { label: "Benchmark sector CAEN", cells: [false, true, true, true] },
     ],
@@ -436,9 +441,5 @@ export const PRICING_FAQ: { q: string; a: string }[] = [
   {
     q: "De ce costă mult mai puțin decât un consultant financiar clasic?",
     a: "Diagnosticul care durează 1–2 săptămâni la un consultant este calculat automat din e-Factura în sub 2 minute, iar actualizarea la facturi noi nu se mai plătește la oră. Plătești doar abonamentul, nu timpul de analiză manuală.",
-  },
-  {
-    q: "Ce primește o bancă din parteneriatul B2B?",
-    a: "Dosare IMM pre-calificate (scor peste 70 și DSCR validat), cu indicatorii deja auditați. Modelul combină o licență SaaS / white-label cu un comision per lead calificat.",
   },
 ];

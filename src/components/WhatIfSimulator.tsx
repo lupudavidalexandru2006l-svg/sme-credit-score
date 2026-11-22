@@ -11,6 +11,7 @@ import { useAssessment } from "./AssessmentProvider";
 import { BankLogo } from "./BankLogos";
 import { LockedGate } from "./PlanGate";
 import { Badge, Button, Card, CardHeader, cx } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 interface SimValues {
   dso: number;
@@ -24,7 +25,7 @@ const roundTo = (n: number, step: number) => Math.round(n / step) * step;
 
 function verdict(a: Assessment) {
   const ready = a.final.finalScore >= CREDIT_READY_MIN_SCORE && !a.banks.all.every((b) => !b.eligible) && a.banks.creditReady;
-  return ready ? { label: "CREDIT READY", tone: "emerald" as const } : { label: "RESPINS", tone: "red" as const };
+  return ready ? { label: "CREDIT READY", tone: "emerald" as const } : { label: tr("RESPINS"), tone: "red" as const };
 }
 
 /** Best product of each bank in the simulated profile, with the same product's status in the real profile. */
@@ -72,7 +73,7 @@ function SliderRow({
           </span>
           {changed && (
             <span className="ml-1.5 text-[11px] text-faint">
-              real {format(real)}
+              {tr("real")} {format(real)}
               {unit}
             </span>
           )}
@@ -195,29 +196,29 @@ export function WhatIfSimulator() {
     <Card className="no-print mt-5" id="what-if">
       <CardHeader
         icon={<FlaskConical size={18} />}
-        title="Simulator What-If — ce se întâmplă dacă…"
-        subtitle="Mișcă sliderele: scorul, băncile și lichiditatea se recalculează instant cu aceleași formule, pe datele reale ale firmei. Nimic nu se salvează."
-        action={<Badge tone="blue">100% în browser · instant</Badge>}
+        title={tr("Simulator What-If — ce se întâmplă dacă…")}
+        subtitle={tr("Mișcă sliderele: scorul, băncile și lichiditatea se recalculează instant cu aceleași formule, pe datele reale ale firmei. Nimic nu se salvează.")}
+        action={<Badge tone="blue">{tr("100% în browser · instant")}</Badge>}
       />
       {!assessment.final.complete ? (
         <p className="rounded-xl bg-amber-soft px-4 py-3 text-xs font-medium text-amber">
-          Simulatorul pornește de la valorile reale ale firmei. Lipsesc: {(assessment.final.missing ?? []).join("; ")}.
+          {tr("Simulatorul pornește de la valorile reale ale firmei. Lipsesc: {m}.", { m: (assessment.final.missing ?? []).map((x) => tr(x)).join("; ") })}
         </p>
       ) : (
-        <LockedGate feature="whatIfSimulator" title="Simulatorul What-If este inclus în Planul Pro și în Pay-Per-Use">
+        <LockedGate feature="whatIfSimulator" title={tr("Simulatorul What-If este inclus în Planul Pro și în Pay-Per-Use")}>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <div className="min-w-0 space-y-5">
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" className="px-3.5 py-2 text-xs" onClick={() => (stopDemo(), setSim(real))}>
-                  <RotateCcw size={13} /> Resetează la valorile reale
+                  <RotateCcw size={13} /> {tr("Resetează la valorile reale")}
                 </Button>
                 <Button className="px-3.5 py-2 text-xs" onClick={runDemo} disabled={demoRunning}>
-                  <Play size={13} /> Simulează firmă respinsă → acceptată
+                  <Play size={13} /> {tr("Simulează firmă respinsă → acceptată")}
                 </Button>
               </div>
-              <SliderRow label="Termen mediu de încasare (DSO)" value={sim.dso} min={0} max={90} step={1} unit=" zile" real={real.dso} onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, dso: v })))} hint="bănci: ≤ 30 ideal" />
+              <SliderRow label={tr("Termen mediu de încasare (DSO)")} value={sim.dso} min={0} max={90} step={1} unit={` ${tr("zile")}`} real={real.dso} onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, dso: v })))} hint={tr("bănci: ≤ 30 ideal")} />
               <SliderRow
-                label="Dependența de cel mai mare client"
+                label={tr("Dependența de cel mai mare client")}
                 value={sim.concentration}
                 min={5}
                 max={90}
@@ -225,29 +226,29 @@ export function WhatIfSimulator() {
                 unit="%"
                 real={real.concentration}
                 onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, concentration: v })))}
-                hint="ING: sub 40%"
+                hint={tr("ING: sub 40%")}
               />
-              <SliderRow label="Aport propriu (avans)" value={sim.own} min={0} max={40} step={1} unit="%" real={real.own} onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, own: v })))} hint="BCR 15% · Raiffeisen 20%" />
+              <SliderRow label={tr("Aport propriu (avans)")} value={sim.own} min={0} max={40} step={1} unit="%" real={real.own} onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, own: v })))} hint="BCR 15% · Raiffeisen 20%" />
               <SliderRow
-                label="Suma solicitată"
+                label={tr("Suma solicitată")}
                 value={sim.amount}
                 min={10_000}
                 max={amountMax}
                 step={5_000}
                 unit=" RON"
                 real={real.amount}
-                format={(v) => v.toLocaleString("ro-RO")}
+                format={(v) => num(v)}
                 onChange={(v) => (stopDemo(), setSim((s) => ({ ...s, amount: v })))}
               />
               <p className="flex items-center gap-1.5 text-[11px] text-faint">
-                <SlidersHorizontal size={12} /> Sliderele pornesc de la valorile reale; datele salvate nu se modifică.
+                <SlidersHorizontal size={12} /> {tr("Sliderele pornesc de la valorile reale; datele salvate nu se modifică.")}
               </p>
             </div>
 
             <div className="min-w-0 space-y-4">
               <div className="grid grid-cols-1 items-center gap-3 rounded-2xl bg-canvas p-4 sm:grid-cols-[1fr_auto_1fr]">
                 <div>
-                  <p className="text-[11px] text-muted">Scor actual</p>
+                  <p className="text-[11px] text-muted">{tr("Scor actual")}</p>
                   <p className="text-3xl font-light tracking-tight text-ink">
                     {num(assessment.final.finalScore)}
                     <span className="text-base text-faint">/100</span>
@@ -256,7 +257,7 @@ export function WhatIfSimulator() {
                 </div>
                 <ArrowRight size={18} className="hidden text-faint sm:block" />
                 <div>
-                  <p className="text-[11px] text-muted">Scor simulat</p>
+                  <p className="text-[11px] text-muted">{tr("Scor simulat")}</p>
                   <p className={cx("text-3xl font-light tracking-tight", after.tone === "emerald" ? "text-emerald-strong" : "text-red")}>
                     {num(simulated.final.finalScore)}
                     <span className="text-base text-faint">/100</span>
@@ -266,7 +267,7 @@ export function WhatIfSimulator() {
                     {delta !== 0 && (
                       <Badge tone={delta > 0 ? "emerald" : "red"}>
                         {delta > 0 ? "+" : ""}
-                        {num(delta)} puncte
+                        {num(delta)} {tr("puncte")}
                       </Badge>
                     )}
                   </div>
@@ -275,34 +276,34 @@ export function WhatIfSimulator() {
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-line p-3">
-                  <p className="text-[11px] text-muted">S_Business simulat</p>
+                  <p className="text-[11px] text-muted">{tr("S_Business simulat")}</p>
                   <p className="text-lg text-ink">
                     {num(simulated.final.pillars.business.score)} <span className="text-xs text-faint">vs {num(assessment.final.pillars.business.score)}</span>
                   </p>
                 </div>
                 <div className="rounded-xl border border-line p-3">
-                  <p className="text-[11px] text-muted">DSCR simulat</p>
+                  <p className="text-[11px] text-muted">{tr("DSCR simulat")}</p>
                   <p className="text-lg text-ink">
                     {simulated.business.dscr >= 99 ? "—" : `${num(simulated.business.dscr)}×`}{" "}
-                    <span className="text-xs text-faint">rată {ron(simulated.business.loanInstallment)}</span>
+                    <span className="text-xs text-faint">{tr("rată")} {ron(simulated.business.loanInstallment)}</span>
                   </p>
                 </div>
                 <div className={cx("rounded-xl border p-3", freed > 0 ? "border-emerald/40 bg-emerald-soft/40" : "border-line")}>
                   <p className="flex items-center gap-1 text-[11px] text-muted">
-                    <Banknote size={12} /> Impact pe lichiditate
+                    <Banknote size={12} /> {tr("Impact pe lichiditate")}
                   </p>
                   <p className={cx("text-lg", freed > 0 ? "text-emerald-strong" : freed < 0 ? "text-red" : "text-ink")}>
                     {freed > 0 ? "+" : ""}
                     {ron(freed)}
                   </p>
-                  <p className="text-[10px] text-faint">cash eliberat prin DSO {Math.round(m.dsoDays)} → {sim.dso} zile</p>
+                  <p className="text-[10px] text-faint">{tr("cash eliberat prin DSO {a} → {b} zile", { a: Math.round(m.dsoDays), b: sim.dso })}</p>
                 </div>
               </div>
 
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-ink">Impact pe băncile din România</p>
-                  {turnedGreen > 0 && <Badge tone="emerald">{turnedGreen} bănci devin eligibile</Badge>}
+                  <p className="text-sm font-medium text-ink">{tr("Impact pe băncile din România")}</p>
+                  {turnedGreen > 0 && <Badge tone="emerald">{tr("{n} bănci devin eligibile", { n: turnedGreen })}</Badge>}
                 </div>
                 <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {banks.map(({ sim: s, real: r }) => {
@@ -319,12 +320,12 @@ export function WhatIfSimulator() {
                         <BankLogo bank={s.bank} size={30} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-medium text-ink">{s.bank}</p>
-                          <p className="truncate text-[10px] text-muted">{s.product}</p>
+                          <p className="truncate text-[10px] text-muted">{tr(s.product)}</p>
                         </div>
                         <div className="text-right">
-                          <p className={cx("text-[11px] font-semibold", s.eligible ? "text-emerald-strong" : "text-red")}>{s.eligible ? "Eligibil" : "Neeligibil"}</p>
+                          <p className={cx("text-[11px] font-semibold", s.eligible ? "text-emerald-strong" : "text-red")}>{s.eligible ? tr("Eligibil") : tr("Neeligibil")}</p>
                           <p className="text-[10px] text-faint">
-                            {r && r.eligible !== s.eligible ? `era ${r.eligible ? "eligibil" : "neeligibil"} · ` : ""}
+                            {r && r.eligible !== s.eligible ? `${tr("era")} ${r.eligible ? tr("eligibil") : tr("neeligibil")} · ` : ""}
                             {s.matchPct}%
                           </p>
                         </div>

@@ -34,7 +34,8 @@ import { effectiveDebtService } from "./company.ts";
 import { computeBenchmark, evaluateFinancialQuiz, evaluateInvestment, quizTruthFromMetrics } from "./scoringEngine.ts";
 import type { MultiSourceVerificationReport } from "./multi-source-verifier.ts";
 import { LOAN_MONTHS } from "./bcr-formulas.ts";
-import { pct } from "./util.ts";
+import { pct, getNumberLocale } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 export interface AssessmentInput {
   company: Company;
@@ -97,9 +98,9 @@ export function computeAssessment(input: AssessmentInput): Assessment {
     quizAnswered: quiz.answered === 5,
   };
   const missing = [
-    !dataStatus.hasInvoices && "facturi e-Factura emise (XML UBL 2.1) pentru pilonul Business",
-    !dataStatus.financialsDeclared && "cheltuielile fixe lunare și ratele existente (declarate în Pasul 2)",
-    !dataStatus.externalChecked && "cel puțin o verificare externă reușită (CUI pentru ANAF sau portal.just.ro)",
+    !dataStatus.hasInvoices && tr("facturi e-Factura emise (UBL 2.1) pentru pilonul Business"),
+    !dataStatus.financialsDeclared && tr("cheltuielile fixe lunare și ratele existente (declarate în Pasul 2)"),
+    !dataStatus.externalChecked && tr("cel puțin o verificare externă reușită (CUI pentru ANAF sau portal.just.ro)"),
   ].filter(Boolean) as string[];
 
   const final = calculateFinalScore({
@@ -113,20 +114,20 @@ export function computeAssessment(input: AssessmentInput): Assessment {
   final.complete = missing.length === 0;
   final.missing = missing;
   for (const d of company.debts ?? []) {
-    if (d.daysLate > 90) final.warnings.push(`Restanță de ${d.daysLate} zile la ${d.lender} (raport CRC): majoritatea băncilor resping dosarul până la regularizare.`);
-    else if (d.daysLate > 30) final.warnings.push(`Întârziere de ${d.daysLate} zile la ${d.lender}: plătește restanța înainte de depunerea dosarului.`);
+    if (d.daysLate > 90) final.warnings.push(tr("Restanță de {d} zile la {l} (raport CRC): majoritatea băncilor resping dosarul până la regularizare.", { d: d.daysLate, l: d.lender }));
+    else if (d.daysLate > 30) final.warnings.push(tr("Întârziere de {d} zile la {l}: plătește restanța înainte de depunerea dosarului.", { d: d.daysLate, l: d.lender }));
   }
   for (const s of input.verification?.sources.filter((x) => x.status === "critical") ?? []) {
-    final.warnings.push(`${s.name}: ${s.summary}`);
+    final.warnings.push(`${tr(s.name)}: ${tr(s.summary)}`);
   }
   if (input.legal?.integrityKillSwitch) {
-    final.warnings.push("Alertă de integritate: portal.just.ro a returnat cel puțin un dosar critic (insolvență / infracțiune economică). Scorul legal este 0.");
+    final.warnings.push(tr("Alertă de integritate: portal.just.ro a returnat cel puțin un dosar critic (insolvență / infracțiune economică). Scorul legal este 0."));
   }
   if (investment.overLeveragedRequest) {
-    final.warnings.push(`Alertă de supraîndatorare: suma cerută reprezintă ${pct(investment.leverageRatio * 100)} din cifra de afaceri anualizată (peste 50%).`);
+    final.warnings.push(tr("Alertă de supraîndatorare: suma cerută reprezintă {p} din cifra de afaceri anualizată (peste 50%).", { p: pct(investment.leverageRatio * 100) }));
   }
   if (business.dscr < 1) {
-    final.warnings.push(`Risc major de nerambursare: DSCR ${business.dscr.toLocaleString("ro-RO")}× — cash-flow-ul operațional nu acoperă ratele (existente + nouă).`);
+    final.warnings.push(tr("Risc major de nerambursare: DSCR {d}× — cash-flow-ul operațional nu acoperă ratele (existente + nouă).", { d: business.dscr.toLocaleString(getNumberLocale()) }));
   }
 
   const core = { metrics, business, quiz, investment, benchmark, sectorSource, legalScore, legalPending, dataStatus, final };

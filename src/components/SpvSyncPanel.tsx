@@ -5,6 +5,7 @@ import { CircleAlert, CircleCheck, CloudDownload, FileArchive, KeyRound, LoaderC
 import { browserInflateRaw, invoiceXmlFromZip } from "@/lib/efactura/zip";
 import { useAssessment } from "./AssessmentProvider";
 import { Button, cx } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 type StepState = "pending" | "active" | "done" | "error" | "waiting";
 interface Step {
@@ -44,12 +45,12 @@ export function SpvSyncButton() {
   /** Steps 3-4, shared by the SPV download and the ZIP import. */
   const parseAndScore = useCallback(
     async (files: { name: string; xml: string }[]) => {
-      set(2, { state: "active", detail: `${files.length} fișiere XML` });
+      set(2, { state: "active", detail: tr("{n} fișiere XML", { n: files.length }) });
       const results = await uploadXml(files);
       const ok = results.filter((r) => r.ok).length;
       const bad = results.length - ok;
-      set(2, { state: ok > 0 ? "done" : "error", detail: `${ok} facturi parsate pe ${company.name}${bad ? ` · ${bad} respinse (vezi lista de mai jos)` : ""}` });
-      set(3, ok > 0 ? { state: "done", detail: "Toți pilonii au fost recalculați; facturile s-au salvat în e_invoices pe firma activă." } : { state: "error", detail: "Nicio factură validă: scorul nu s-a schimbat." });
+      set(2, { state: ok > 0 ? "done" : "error", detail: `${tr("{n} facturi parsate pe {name}", { n: ok, name: company.name })}${bad ? ` · ${tr("{n} respinse (vezi lista de mai jos)", { n: bad })}` : ""}` });
+      set(3, ok > 0 ? { state: "done", detail: tr("Toți pilonii au fost recalculați; facturile s-au salvat în e_invoices pe firma activă.") } : { state: "error", detail: tr("Nicio factură validă: scorul nu s-a schimbat.") });
     },
     [uploadXml, company.name],
   );
@@ -58,23 +59,23 @@ export function SpvSyncButton() {
     setBusy(true);
     setSteps(freshSteps());
     try {
-      set(0, { state: "active", detail: "Verific conexiunea cu SPV…" });
+      set(0, { state: "active", detail: tr("Verific conexiunea cu SPV…") });
       const st = (await fetch("/api/spv/status").then((r) => r.json())) as { configured: boolean; connected: boolean };
       setStatus(st);
       if (!st.configured) {
-        set(0, { state: "error", detail: "Aplicația OAuth ANAF nu este configurată pe acest server. Importă arhivele ZIP descărcate din SPV (mai jos) — același flux, aceleași facturi reale." });
+        set(0, { state: "error", detail: tr("Aplicația OAuth ANAF nu este configurată pe acest server. Importă arhivele ZIP descărcate din SPV (mai jos) — același flux, aceleași facturi reale.") });
         return;
       }
       if (!st.connected) {
-        set(0, { state: "waiting", detail: "Conectează-te cu certificatul digital calificat (token USB) pe logincert.anaf.ro." });
+        set(0, { state: "waiting", detail: tr("Conectează-te cu certificatul digital calificat (token USB) pe logincert.anaf.ro.") });
         return;
       }
       if (!company.cui) {
-        set(0, { state: "error", detail: "SPV listează facturile după CIF: completează CUI-ul firmei în Pasul 1." });
+        set(0, { state: "error", detail: tr("SPV listează facturile după CIF: completează CUI-ul firmei în Pasul 1.") });
         return;
       }
-      set(0, { state: "done", detail: "Sesiune SPV activă (token OAuth ANAF)." });
-      set(1, { state: "active", detail: `Interoghez SPV pentru CIF ${company.cui} (ultimele 12 luni)…` });
+      set(0, { state: "done", detail: tr("Sesiune SPV activă (token OAuth ANAF).") });
+      set(1, { state: "active", detail: tr("Interoghez SPV pentru CIF {cui} (ultimele 12 luni)…", { cui: company.cui }) });
       const r = (await fetch("/api/spv/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cui: company.cui, days: 365 }) }).then((x) => x.json())) as {
         ok: boolean;
         step?: string;
@@ -87,16 +88,16 @@ export function SpvSyncButton() {
         files?: { name: string; xml: string }[];
       };
       if (!r.ok) {
-        set(r.step === "auth" ? 0 : 1, { state: "error", detail: r.error ?? "SPV indisponibil." });
+        set(r.step === "auth" ? 0 : 1, { state: "error", detail: r.error ? tr(r.error) : tr("SPV indisponibil.") });
         return;
       }
       set(1, {
         state: r.found ? "done" : "error",
-        detail: r.found ? `${r.found} mesaje (${r.issued} emise, ${r.received} primite) · ${r.downloaded} XML descărcate${r.truncated ? " · restul la următoarea sincronizare" : ""}` : "SPV nu are facturi pentru acest CIF în perioada cerută.",
+        detail: r.found ? `${tr("{f} mesaje ({i} emise, {r} primite) · {d} XML descărcate", { f: r.found, i: r.issued ?? 0, r: r.received ?? 0, d: r.downloaded ?? 0 })}${r.truncated ? tr(" · restul la următoarea sincronizare") : ""}` : tr("SPV nu are facturi pentru acest CIF în perioada cerută."),
       });
       if (r.files?.length) await parseAndScore(r.files);
     } catch {
-      set(0, { state: "error", detail: "API indisponibil." });
+      set(0, { state: "error", detail: tr("API indisponibil.") });
     } finally {
       setBusy(false);
     }
@@ -111,21 +112,21 @@ export function SpvSyncButton() {
     /* eslint-disable react-hooks/set-state-in-effect -- one-time resume after the OAuth redirect */
     setOpen(true);
     if (spv === "conectat") void run();
-    else setSteps(freshSteps().map((s, i) => (i === 0 ? { ...s, state: "error", detail: spv === "neconfigurat" ? "Aplicația OAuth ANAF nu este configurată." : "Autentificarea SPV a eșuat sau a fost anulată." } : s)));
+    else setSteps(freshSteps().map((s, i) => (i === 0 ? { ...s, state: "error", detail: spv === "neconfigurat" ? tr("Aplicația OAuth ANAF nu este configurată.") : tr("Autentificarea SPV a eșuat sau a fost anulată.") } : s)));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [run]);
 
   const importZip = async (files: File[]) => {
     setBusy(true);
     setSteps(freshSteps());
-    set(0, { state: "done", detail: "Arhive descărcate de tine din SPV (fără OAuth)." });
-    set(1, { state: "active", detail: `${files.length} arhive ZIP` });
+    set(0, { state: "done", detail: tr("Arhive descărcate de tine din SPV (fără OAuth).") });
+    set(1, { state: "active", detail: tr("{n} arhive ZIP", { n: files.length }) });
     try {
       const xml = (await Promise.all(files.map(async (f) => invoiceXmlFromZip(new Uint8Array(await f.arrayBuffer()), browserInflateRaw, f.name)))).flat();
-      set(1, { state: xml.length ? "done" : "error", detail: xml.length ? `${xml.length} facturi XML găsite în ${files.length} arhive` : "Nicio factură XML în arhive (semnăturile sunt ignorate)." });
+      set(1, { state: xml.length ? "done" : "error", detail: xml.length ? tr("{x} facturi XML găsite în {n} arhive", { x: xml.length, n: files.length }) : tr("Nicio factură XML în arhive (semnăturile sunt ignorate).") });
       if (xml.length) await parseAndScore(xml);
     } catch (e) {
-      set(1, { state: "error", detail: e instanceof Error ? e.message : "Arhivă invalidă." });
+      set(1, { state: "error", detail: e instanceof Error ? tr(e.message) : tr("Arhivă invalidă.") });
     } finally {
       setBusy(false);
     }
@@ -140,7 +141,7 @@ export function SpvSyncButton() {
         }}
         disabled={!company.id}
       >
-        <CloudDownload size={15} /> Preluare Automată din RO e-Factura (SPV)
+        <CloudDownload size={15} /> {tr("Preluare Automată din RO e-Factura (SPV)")}
       </Button>
       <input
         ref={zipRef}
@@ -156,15 +157,15 @@ export function SpvSyncButton() {
       />
       {open && (
         <div className="no-print fixed inset-0 z-50 grid place-items-center bg-navy/30 p-4 backdrop-blur-sm" onClick={() => !busy && setOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-label="Sincronizare SPV" className="animate-rise w-full max-w-[520px] rounded-[24px] bg-white p-6 shadow-pop" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={tr("Sincronizare SPV")} className="animate-rise w-full max-w-[520px] rounded-[24px] bg-white p-6 shadow-pop" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-medium tracking-tight text-ink">Sincronizare RO e-Factura (SPV)</h2>
+                <h2 className="text-lg font-medium tracking-tight text-ink">{tr("Sincronizare RO e-Factura (SPV)")}</h2>
                 <p className="text-xs text-muted">
-                  {company.officialName || company.name} · {company.cui ? `CIF ${company.cui}` : "fără CUI"}
+                  {company.officialName || company.name} · {company.cui ? `CIF ${company.cui}` : tr("fără CUI")}
                 </p>
               </div>
-              <button type="button" onClick={() => !busy && setOpen(false)} aria-label="Închide" className="text-faint hover:text-ink disabled:opacity-40" disabled={busy}>
+              <button type="button" onClick={() => !busy && setOpen(false)} aria-label={tr("Închide")} className="text-faint hover:text-ink disabled:opacity-40" disabled={busy}>
                 <X size={18} />
               </button>
             </div>
@@ -175,11 +176,11 @@ export function SpvSyncButton() {
                     <StepIcon state={s.state} n={i + 1} />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-ink">{s.label}</p>
+                    <p className="text-sm font-medium text-ink">{tr(s.label)}</p>
                     {s.detail && <p className="mt-0.5 text-xs leading-relaxed text-muted">{s.detail}</p>}
                     {i === 0 && s.state === "waiting" && (
-                      <a href="/api/spv/authorize?returnTo=/analiza" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-navy px-4 py-2 text-xs font-medium text-white hover:bg-navy-2">
-                        <KeyRound size={13} /> Conectează-te la SPV cu certificatul digital
+                      <a href="/api/spv/authorize?returnTo=/onboarding" className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-navy px-4 py-2 text-xs font-medium text-white hover:bg-navy-2">
+                        <KeyRound size={13} /> {tr("Conectează-te la SPV cu certificatul digital")}
                       </a>
                     )}
                   </div>
@@ -187,17 +188,17 @@ export function SpvSyncButton() {
               ))}
             </ol>
             <div className="mt-5 rounded-2xl bg-canvas p-4">
-              <p className="text-xs font-medium text-ink">Ai descărcat deja facturile din SPV?</p>
+              <p className="text-xs font-medium text-ink">{tr("Ai descărcat deja facturile din SPV?")}</p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-muted">
-                În SPV → e-Factura, fiecare factură se descarcă drept arhivă ZIP (XML + semnătură). Încarcă una sau mai multe arhive (sau o arhivă cu arhive): le despachetăm în browser și parcurgem pașii 3–4.
+                {tr("În SPV → e-Factura, fiecare factură se descarcă drept arhivă ZIP (XML + semnătură). Încarcă una sau mai multe arhive (sau o arhivă cu arhive): le despachetăm în browser și parcurgem pașii 3–4.")}
               </p>
               <Button variant="secondary" className="mt-3 px-4 py-2 text-xs" onClick={() => zipRef.current?.click()} disabled={busy || !company.id}>
-                <FileArchive size={14} /> Importă arhive ZIP din SPV
+                <FileArchive size={14} /> {tr("Importă arhive ZIP din SPV")}
               </Button>
             </div>
             {status && !status.configured && (
               <p className="mt-3 text-[11px] leading-relaxed text-faint">
-                Pentru preluarea direct din API: înregistrează aplicația în portalul ANAF pentru dezvoltatori și setează ANAF_OAUTH_CLIENT_ID, ANAF_OAUTH_CLIENT_SECRET și ANAF_OAUTH_REDIRECT_URI.
+                {tr("Pentru preluarea direct din API: înregistrează aplicația în portalul ANAF pentru dezvoltatori și setează ANAF_OAUTH_CLIENT_ID, ANAF_OAUTH_CLIENT_SECRET și ANAF_OAUTH_REDIRECT_URI.")}
               </p>
             )}
           </div>

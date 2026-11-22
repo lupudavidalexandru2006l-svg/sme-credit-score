@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
  * POST /api/companies — step 1 "save company".
  * Body: { name, ceoName, cui?, caenCode?, sector?, id? }. Name and CEO are required; CUI and CAEN are optional.
  * Finds the company by CUI (if given) or by normalized name; creates it otherwise and
- * returns it with no invoices: only uploaded e-Factura XML adds them (no invented history).
+ * returns it with no invoices: only uploaded e-Factura adds them (no invented history).
  */
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as Partial<UpsertCompanyInput> | null;

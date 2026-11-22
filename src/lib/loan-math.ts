@@ -8,7 +8,8 @@
  */
 import type { BusinessMetrics, MonthPoint } from "../types/scoring";
 import { annuityInstallment, principalForInstallment, LOAN_ANNUAL_RATE } from "./bcr-formulas.ts";
-import { round2 } from "./util.ts";
+import { round2, getNumberLocale } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 /** Minimum DSCR covenant used by Romanian banks for SMEs. */
 export const SAFE_DSCR = 1.25;
@@ -130,12 +131,12 @@ export function stressTest(m: BusinessMetrics, fixedCosts: number, existingDebtS
   const tone = ref >= SAFE_DSCR ? "emerald" : ref >= 1 ? "amber" : "red";
   const verdict =
     debt <= 0
-      ? "Fără rate de plătit: scăderea vânzărilor afectează doar profitul."
+      ? tr("Fără rate de plătit: scăderea vânzărilor afectează doar profitul.")
       : tone === "emerald"
-        ? `Și cu vânzări −${dropPct}%, firma acoperă rata de ${ref.toLocaleString("ro-RO", { maximumFractionDigits: 2 })} ori — peste pragul băncilor (1,25).`
+        ? tr("Și cu vânzări −{d}%, firma acoperă rata de {x} ori — peste pragul băncilor (1,25).", { d: dropPct, x: ref.toLocaleString(getNumberLocale(), { maximumFractionDigits: 2 }) })
         : tone === "amber"
-          ? `Cu vânzări −${dropPct}%, rata se plătește, dar sub pragul de siguranță al băncilor (1,25): ai nevoie de o rezervă.`
-          : `Cu vânzări −${dropPct}%, încasările nu mai acoperă rata: în extrasezon ai nevoie de rezervă sau de o sumă mai mică.`;
+          ? tr("Cu vânzări −{d}%, rata se plătește, dar sub pragul de siguranță al băncilor (1,25): ai nevoie de o rezervă.", { d: dropPct })
+          : tr("Cu vânzări −{d}%, încasările nu mai acoperă rata: în extrasezon ai nevoie de rezervă sau de o sumă mai mică.", { d: dropPct });
   return {
     dropPct,
     stressedCashFlow: round2(stressedCashFlow),

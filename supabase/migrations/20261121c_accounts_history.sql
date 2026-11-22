@@ -1,4 +1,4 @@
--- Migration v5 -> v6 (Afghankingz Credit): accounts + roles, assessment history, masked CNP, pay-per-use.
+-- Migration v5 -> v6 (CrediFit): accounts + roles, assessment history, masked CNP, pay-per-use.
 -- Idempotent (IF NOT EXISTS / DROP ... IF EXISTS): safe to run again. schema.sql already contains all of it.
 
 begin;

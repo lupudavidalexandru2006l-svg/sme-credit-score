@@ -7,6 +7,7 @@ import { XMLParser } from "fast-xml-parser";
 import type { Company, Invoice } from "../../types/scoring";
 import { invoiceKey, isSameParty } from "../company.ts";
 import { round2 } from "../util.ts";
+import { tr } from "../i18n/tr.ts";
 
 export interface ParseResult {
   ok: boolean;
@@ -75,10 +76,10 @@ export function parseEFacturaXml(xml: string, fileName: string, company: Company
   try {
     doc = parser.parse(xml);
   } catch (e) {
-    return { ok: false, fileName, warnings, error: `XML invalid: ${e instanceof Error ? e.message : "eroare de parsare"}` };
+    return { ok: false, fileName, warnings, error: `XML invalid: ${e instanceof Error ? e.message : tr("eroare de parsare")}` };
   }
   const found = findDocument(doc);
-  if (!found) return { ok: false, fileName, warnings, error: "Nu este un document UBL 2.1 (lipsește <Invoice> sau <CreditNote>)." };
+  if (!found) return { ok: false, fileName, warnings, error: tr("Nu este un document UBL 2.1 (lipsește <Invoice> sau <CreditNote>).") };
   const { root, kind } = found;
 
   const number = value(root, "ID");
@@ -95,7 +96,7 @@ export function parseEFacturaXml(xml: string, fileName: string, company: Company
     !/^\d{4}-\d{2}-\d{2}$/.test(issueDate) && "cbc:IssueDate",
     Number.isNaN(taxExclusive) && "cbc:TaxExclusiveAmount",
   ].filter(Boolean);
-  if (missing.length) return { ok: false, fileName, warnings, error: `Câmpuri obligatorii lipsă: ${missing.join(", ")}.` };
+  if (missing.length) return { ok: false, fileName, warnings, error: tr("Câmpuri obligatorii lipsă: {a}.", { a: missing.join(", ") }) };
 
   const supplier = party(root, "AccountingSupplierParty");
   const customer = party(root, "AccountingCustomerParty");
@@ -111,14 +112,14 @@ export function parseEFacturaXml(xml: string, fileName: string, company: Company
     direction = "received";
     matchedBy = via(customer);
   } else {
-    const who = company.cui ? `CUI-ul ${company.cui} / numele „${company.name}”` : `numele „${company.name}” (firma nu are CUI)`;
-    warnings.push(`Firma activă nu apare ca furnizor sau client (${who}); factura a fost atașată firmei active ca emisă. Verifică dacă ai selectat firma corectă.`);
+    const who = company.cui ? `CUI-ul ${company.cui} / numele „${company.name}”` : tr("numele „{a}” (firma nu are CUI)", { a: company.name });
+    warnings.push(tr("Firma activă nu apare ca furnizor sau client ({a}); factura a fost atașată firmei active ca emisă. Verifică dacă ai selectat firma corectă.", { a: who }));
   }
-  if (matchedBy === "nume") warnings.push("Factura a fost potrivită cu firma activă după nume (fără CUI).");
+  if (matchedBy === "nume") warnings.push(tr("Factura a fost potrivită cu firma activă după nume (fără CUI)."));
 
-  if (currency !== "RON") warnings.push(`Moneda ${currency}: sumele sunt folosite ca atare, fără conversie în RON.`);
-  if (typeCode === "381") warnings.push("Factură storno (381): reduce cifra de afaceri și crește rata de stornări.");
-  if (!dueDate && typeCode !== "381") warnings.push("Fără DueDate: factura nu intră în calculul termenului de plată.");
+  if (currency !== "RON") warnings.push(tr("Moneda {a}: sumele sunt folosite ca atare, fără conversie în RON.", { a: currency }));
+  if (typeCode === "381") warnings.push(tr("Factură storno (381): reduce cifra de afaceri și crește rata de stornări."));
+  if (!dueDate && typeCode !== "381") warnings.push(tr("Fără DueDate: factura nu intră în calculul termenului de plată."));
 
   const invoice: Invoice = {
     id: "",

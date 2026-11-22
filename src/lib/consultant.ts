@@ -9,6 +9,7 @@ import { annuityInstallment, LOAN_ANNUAL_RATE, LOAN_MONTHS, principalForInstallm
 import { effectiveDebtService } from "./company.ts";
 import { netResult, type BilantYear } from "./real-company-sources.ts";
 import { num, pct, ron } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 export interface ConsultantInput {
   company: Company;
@@ -49,57 +50,57 @@ export function financingInstruments(a: Assessment, input: ConsultantInput): Fin
   if (y && y.capitaluriProprii < 0) {
     out.push({
       id: "equity",
-      title: "Majorare de capital sau conversia împrumuturilor de la asociați",
-      why: `Capitalurile proprii sunt negative în bilanțul ${y.an}. Înainte de orice credit, aducerea capitalului pe plus este de regulă condiție de eligibilitate.`,
+      title: tr("Majorare de capital sau conversia împrumuturilor de la asociați"),
+      why: tr("Capitalurile proprii sunt negative în bilanțul {a}. Înainte de orice credit, aducerea capitalului pe plus este de regulă condiție de eligibilitate.", { a: y.an }),
       fit: "recomandat",
     });
   }
   if (inv.purpose === "growth") {
     out.push({
       id: "leasing",
-      title: "Leasing financiar pentru echipamente / vehicule",
-      why: "Bunul finanțat este chiar garanția, aprobarea e de obicei mai rapidă decât la un credit de investiții, iar avansul se negociază.",
+      title: tr("Leasing financiar pentru echipamente / vehicule"),
+      why: tr("Bunul finanțat este chiar garanția, aprobarea e de obicei mai rapidă decât la un credit de investiții, iar avansul se negociază."),
       fit: coverage < 1 ? "recomandat" : "de luat în calcul",
     });
   }
   if (a.dataStatus.hasInvoices && m.dsoDays > 45) {
     out.push({
       id: "factoring",
-      title: "Factoring pe facturile emise",
-      why: `Încasezi în medie în ${num(m.dsoDays)} zile. Factoringul transformă facturile neîncasate în lichiditate fără să crească gradul de îndatorare pe termen lung.`,
+      title: tr("Factoring pe facturile emise"),
+      why: tr("Încasezi în medie în {a} zile. Factoringul transformă facturile neîncasate în lichiditate fără să crească gradul de îndatorare pe termen lung.", { a: num(m.dsoDays) }),
       fit: "recomandat",
     });
   }
   if (inv.purpose === "working_capital" || (a.dataStatus.hasInvoices && (m.seasonalityRatio > 1.6 || a.business.resilience.ratio < 1))) {
     out.push({
       id: "credit_line",
-      title: "Linie de credit pentru capital de lucru",
+      title: tr("Linie de credit pentru capital de lucru"),
       why:
         a.dataStatus.hasInvoices && m.seasonalityRatio > 1.6
-          ? `Luna cea mai bună are de ${num(m.seasonalityRatio)}× vânzările celei mai slabe: o linie reînnoibilă acoperă golurile sezoniere mai ieftin decât un credit pe termen lung.`
-          : "Pentru stocuri, salarii și furnizori, o linie reînnoibilă se plătește doar cât e folosită.",
+          ? tr("Luna cea mai bună are de {a}× vânzările celei mai slabe: o linie reînnoibilă acoperă golurile sezoniere mai ieftin decât un credit pe termen lung.", { a: num(m.seasonalityRatio) })
+          : tr("Pentru stocuri, salarii și furnizori, o linie reînnoibilă se plătește doar cât e folosită."),
       fit: inv.purpose === "working_capital" ? "recomandat" : "de luat în calcul",
     });
   }
   if (amount > 0 && coverage < 1) {
     out.push({
       id: "guarantee_fund",
-      title: "Garanție de la un fond de garantare (FNGCIMM / FGCR)",
-      why: `Garanțiile oferite acoperă ${num(Math.round(coverage * 100))}% din suma cerută. Un fond de garantare poate acoperi o parte din credit, contra unui comision.`,
+      title: tr("Garanție de la un fond de garantare (FNGCIMM / FGCR)"),
+      why: tr("Garanțiile oferite acoperă {a}% din suma cerută. Un fond de garantare poate acoperi o parte din credit, contra unui comision.", { a: num(Math.round(coverage * 100)) }),
       fit: "recomandat",
     });
   }
   out.push({
     id: "grants",
-    title: "Fonduri nerambursabile și programe de stat pentru IMM",
-    why: "Verifică apelurile deschise pe site-urile oficiale ale programelor pentru IMM și fondurilor europene: o parte din investiție poate fi acoperită fără rambursare, iar creditul devine mai mic.",
+    title: tr("Fonduri nerambursabile și programe de stat pentru IMM"),
+    why: tr("Verifică apelurile deschise pe site-urile oficiale ale programelor pentru IMM și fondurilor europene: o parte din investiție poate fi acoperită fără rambursare, iar creditul devine mai mic."),
     fit: "de luat în calcul",
   });
   if (out.every((i) => i.id === "grants")) {
     out.unshift({
       id: "term_loan",
-      title: "Credit de investiții / pentru dezvoltare",
-      why: "Indicatorii nu cer un instrument special: un credit clasic, cu rata și durata din simulator, este varianta de bază.",
+      title: tr("Credit de investiții / pentru dezvoltare"),
+      why: tr("Indicatorii nu cer un instrument special: un credit clasic, cu rata și durata din simulator, este varianta de bază."),
       fit: "recomandat",
     });
   }
@@ -117,51 +118,51 @@ export function bankQuestions(a: Assessment, input: ConsultantInput): BankQuesti
   const inv = input.investment;
   const out: BankQuestion[] = [
     {
-      q: "Pentru ce sunt banii și cum generează investiția banii pentru rate?",
-      prep: "Ofertele / facturile proforma, calculul randamentului și proiecția de cash-flow din simulator (scenariul de bază și cel cu vânzări −20%).",
+      q: tr("Pentru ce sunt banii și cum generează investiția banii pentru rate?"),
+      prep: tr("Ofertele / facturile proforma, calculul randamentului și proiecția de cash-flow din simulator (scenariul de bază și cel cu vânzări −20%)."),
     },
   ];
   const [y, prev] = input.bilant;
-  if (y && netResult(y) < 0) out.push({ q: `De ce firma a avut pierdere în ${y.an}?`, prep: "Explicația punctuală (investiție, an atipic, cost unic) și balanța din anul curent care arată revenirea pe profit." });
+  if (y && netResult(y) < 0) out.push({ q: tr("De ce firma a avut pierdere în {a}?", { a: y.an }), prep: tr("Explicația punctuală (investiție, an atipic, cost unic) și balanța din anul curent care arată revenirea pe profit.") });
   if (y && prev && prev.cifraAfaceri > 0 && y.cifraAfaceri < prev.cifraAfaceri * 0.8) {
-    out.push({ q: `De ce a scăzut cifra de afaceri în ${y.an}?`, prep: "Clienții pierduți / câștigați, contractele noi și facturile din ultimele luni care arată tendința actuală." });
+    out.push({ q: tr("De ce a scăzut cifra de afaceri în {a}?", { a: y.an }), prep: tr("Clienții pierduți / câștigați, contractele noi și facturile din ultimele luni care arată tendința actuală.") });
   }
   if (y && a.dataStatus.hasInvoices && y.cifraAfaceri > 0 && Math.abs(m.annualizedRevenue - y.cifraAfaceri) / y.cifraAfaceri > 0.25) {
     out.push({
-      q: "De ce cifra de afaceri din facturi diferă de cea din bilanț?",
-      prep: `Facturile încărcate dau ${ron(m.annualizedRevenue)}/an, bilanțul ${ron(y.cifraAfaceri)}. Pregătește extrasele de cont și, la vânzările cu bon fiscal, rapoartele Z.`,
+      q: tr("De ce cifra de afaceri din facturi diferă de cea din bilanț?"),
+      prep: tr("Facturile încărcate dau {a}/an, bilanțul {b}. Pregătește extrasele de cont și, la vânzările cu bon fiscal, rapoartele Z.", { a: ron(m.annualizedRevenue), b: ron(y.cifraAfaceri) }),
     });
   }
   if (a.dataStatus.hasInvoices && m.topClientSharePct > 30) {
     out.push({
-      q: `Ce se întâmplă dacă pierdeți clientul ${m.topClients[0]?.name ?? "principal"} (${pct(m.topClientSharePct)} din vânzări)?`,
-      prep: "Contractul cu clientul (durată, clauze de reziliere), istoricul colaborării și lista clienților noi în discuție.",
+      q: tr("Ce se întâmplă dacă pierdeți clientul {a} ({b} din vânzări)?", { a: m.topClients[0]?.name ?? "principal", b: pct(m.topClientSharePct) }),
+      prep: tr("Contractul cu clientul (durată, clauze de reziliere), istoricul colaborării și lista clienților noi în discuție."),
     });
   }
   if (a.dataStatus.hasInvoices && m.dsoDays > 45) {
-    out.push({ q: `De ce încasați în medie în ${num(m.dsoDays)} de zile?`, prep: "Lista creanțelor pe vechime (aging), termenele din contracte și ce faci pentru clienții care plătesc târziu." });
+    out.push({ q: tr("De ce încasați în medie în {a} de zile?", { a: num(m.dsoDays) }), prep: tr("Lista creanțelor pe vechime (aging), termenele din contracte și ce faci pentru clienții care plătesc târziu.") });
   }
   if (a.dataStatus.hasInvoices && m.creditNotesSharePct3m > 5) {
-    out.push({ q: `De ce ați stornat ${pct(m.creditNotesSharePct3m)} din facturi în ultimele 3 luni?`, prep: "Motivul fiecărei stornări mari (retur, eroare, discount) și dovada că problema e rezolvată." });
+    out.push({ q: tr("De ce ați stornat {a} din facturi în ultimele 3 luni?", { a: pct(m.creditNotesSharePct3m) }), prep: tr("Motivul fiecărei stornări mari (retur, eroare, discount) și dovada că problema e rezolvată.") });
   }
   if (a.dataStatus.hasInvoices && a.dataStatus.financialsDeclared && a.business.dscr < TARGET_DSCR) {
     out.push({
-      q: "Cum veți plăti rata dacă cash-flow-ul acoperă ratele de doar " + num(a.business.dscr) + " ori?",
-      prep: "O sumă mai mică (vezi „suma pe care firma o poate susține”), o durată mai lungă, aport propriu mai mare sau venituri noi contractate.",
+      q: tr("Cum veți plăti rata dacă cash-flow-ul acoperă ratele de doar {a} ori?", { a: num(a.business.dscr) }),
+      prep: tr("O sumă mai mică (vezi „suma pe care firma o poate susține”), o durată mai lungă, aport propriu mai mare sau venituri noi contractate."),
     });
   }
   for (const d of input.company.debts ?? []) {
-    if (d.daysLate > 0) out.push({ q: `Ce s-a întâmplat cu întârzierea de ${d.daysLate} zile la ${d.lender}?`, prep: "Dovada plății la zi (sau planul de regularizare) și explicația scrisă a întârzierii." });
+    if (d.daysLate > 0) out.push({ q: tr("Ce s-a întâmplat cu întârzierea de {a} zile la {b}?", { a: d.daysLate, b: d.lender }), prep: tr("Dovada plății la zi (sau planul de regularizare) și explicația scrisă a întârzierii.") });
   }
   const counted = input.legal && !input.legal.isFallback ? input.legal.cases.filter((c) => c.severity > 0 && c.userVerdict !== "contestat") : [];
   if (counted.length > 0) {
-    out.push({ q: `Ce sunt cele ${counted.length} dosare din portal.just.ro?`, prep: "Pentru fiecare: stadiul, suma în litigiu și hotărârea sau tranzacția. Pentru omonimi, o declarație că nu ești parte." });
+    out.push({ q: tr("Ce sunt cele {a} dosare din portal.just.ro?", { a: counted.length }), prep: tr("Pentru fiecare: stadiul, suma în litigiu și hotărârea sau tranzacția. Pentru omonimi, o declarație că nu ești parte.") });
   }
   if (input.ageMonths !== null && input.ageMonths < 24) {
-    out.push({ q: `Firma are doar ${input.ageMonths} luni. Ce experiență are administratorul în domeniu?`, prep: "CV-ul administratorului, contractele semnate și, eventual, un garant sau o garanție de la un fond de garantare." });
+    out.push({ q: tr("Firma are doar {a} luni. Ce experiență are administratorul în domeniu?", { a: input.ageMonths }), prep: tr("CV-ul administratorului, contractele semnate și, eventual, un garant sau o garanție de la un fond de garantare.") });
   }
   if (inv.ownContributionPct !== null && inv.ownContributionPct < 10) {
-    out.push({ q: "De ce aportul propriu este sub 10%?", prep: "Sursa aportului (profit reinvestit, aport asociați) sau o garanție suplimentară care compensează." });
+    out.push({ q: tr("De ce aportul propriu este sub 10%?"), prep: tr("Sursa aportului (profit reinvestit, aport asociați) sau o garanție suplimentară care compensează.") });
   }
   return out;
 }
@@ -188,7 +189,7 @@ export const CREDIT_DOCUMENTS: CreditDocument[] = [
   { id: "oferte", label: "Oferte / facturi proforma pentru investiție", where: "Furnizorii investiției", when: (i) => (i.investment.requestedAmount ?? 0) > 0 },
   {
     id: "garantii",
-    label: "Acte de proprietate și raport de evaluare ANEVAR pentru garanție",
+    label: tr("Acte de proprietate și raport de evaluare ANEVAR pentru garanție"),
     where: "Notar / evaluator autorizat ANEVAR",
     when: (i) => i.investment.collateral?.kind === "imobil" || i.investment.collateral?.kind === "echipament",
   },
@@ -199,20 +200,20 @@ export const documentsFor = (input: ConsultantInput) => CREDIT_DOCUMENTS.filter(
 
 /** One-paragraph conclusion, or why there is none yet. */
 export function consultantConclusion(a: Assessment, input: ConsultantInput) {
-  if (!a.final.complete) return { ready: false, text: `Concluzia apare după ce completezi: ${(a.final.missing ?? []).join("; ")}.` };
+  if (!a.final.complete) return { ready: false, text: tr("Concluzia apare după ce completezi: {a}.", { a: (a.final.missing ?? []).join("; ") }) };
   const requested = input.investment.requestedAmount ?? 0;
   const sustainable = sustainableAmount(a, input);
   const term = input.investment.termMonths ?? LOAN_MONTHS;
-  const parts = [`Scor ${num(a.final.finalScore)}/100 (${a.final.status}).`];
+  const parts = [tr("Scor {s}/100 ({st}).", { s: num(a.final.finalScore), st: tr(a.final.status) })];
   if (requested > 0) {
     parts.push(
       sustainable >= requested
-        ? `Suma cerută de ${ron(requested)} este susținută de cash-flow (rată ${ron(annuityInstallment(requested, LOAN_ANNUAL_RATE, term))}/lună pe ${term} luni).`
-        : `Suma cerută de ${ron(requested)} depășește ce poate susține firma; recomandăm cel mult ${ron(sustainable)} pe ${term} luni sau completarea cu aport propriu / garanții.`,
+        ? tr("Suma cerută de {a} este susținută de cash-flow (rată {b}/lună pe {c} luni).", { a: ron(requested), b: ron(annuityInstallment(requested, LOAN_ANNUAL_RATE, term)), c: term })
+        : tr("Suma cerută de {a} depășește ce poate susține firma; recomandăm cel mult {b} pe {c} luni sau completarea cu aport propriu / garanții.", { a: ron(requested), b: ron(sustainable), c: term }),
     );
   } else {
-    parts.push(`Firma poate susține un credit de până la ${ron(sustainable)} pe ${term} luni la DSCR ${num(TARGET_DSCR)}×.`);
+    parts.push(tr("Firma poate susține un credit de până la {a} pe {b} luni la DSCR {c}×.", { a: ron(sustainable), b: term, c: num(TARGET_DSCR) }));
   }
-  if (a.final.warnings.length) parts.push(`De rezolvat înainte de depunere: ${a.final.warnings.length} semnal(e) din profil.`);
+  if (a.final.warnings.length) parts.push(tr("De rezolvat înainte de depunere: {a} semnal(e) din profil.", { a: a.final.warnings.length }));
   return { ready: true, text: parts.join(" ") };
 }

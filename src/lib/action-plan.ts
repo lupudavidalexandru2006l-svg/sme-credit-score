@@ -6,6 +6,7 @@ import type { ActionItem, ScoreDriver } from "../types/scoring";
 import type { Assessment, AssessmentInput } from "./assessment.ts";
 import { CREDIT_NOTE_THRESHOLD_PCT } from "./scoringEngine.ts";
 import { num, pct, ron, round1 } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 /** Everything the plan needs from the assessment (drivers, plan and bank matches excluded). */
 export type Core = Omit<Assessment, "drivers" | "plan" | "banks">;
@@ -27,28 +28,28 @@ export function computeDrivers(a: Core, input: AssessmentInput): ScoreDriver[] {
     label: "Cunoașterea cifrelor (Quiz)",
     pillar: "Factor uman",
     lostPoints: round1((100 - a.quiz.total) * 0.075 + (a.final.quizKillSwitch ? 10 : 0)),
-    detail: `${a.quiz.total}/100 · ${a.quiz.levelLabel}${a.final.quizKillSwitch ? " · kill-switch -10 p" : ""}`,
+    detail: `${a.quiz.total}/100 · ${tr(a.quiz.levelLabel)}${a.final.quizKillSwitch ? " · kill-switch -10 p" : ""}`,
   });
   drivers.push({
     id: "legal",
     label: "Verificare portal.just.ro",
     pillar: "Factor uman",
     lostPoints: a.legalScore === null ? 0 : round1((100 - a.legalScore) * 0.075),
-    detail: a.legalScore !== null && input.legal ? `${a.legalScore}/100 · ${input.legal.totalFound} dosare relevante` : "neverificat — nu intră în scor până la un răspuns al portalului",
+    detail: a.legalScore !== null && input.legal ? tr("{s}/100 · {n} dosare relevante", { s: a.legalScore, n: input.legal.totalFound }) : tr("neverificat — nu intră în scor până la un răspuns al portalului"),
   });
   drivers.push({
     id: "investment",
     label: "Calitatea cererii de finanțare",
     pillar: "Investiție",
     lostPoints: round1((100 - a.investment.total) * 0.075),
-    detail: `${a.investment.total}/100 · sumă = ${pct(a.investment.leverageRatio * 100)} din CA anualizată`,
+    detail: tr("{s}/100 · sumă = {p} din CA anualizată", { s: a.investment.total, p: pct(a.investment.leverageRatio * 100) }),
   });
   drivers.push({
     id: "benchmark",
     label: "Poziționare față de sector",
     pillar: "Investiție",
     lostPoints: round1((100 - a.benchmark.score) * 0.075),
-    detail: `${a.benchmark.score}/100 vs. mediana CAEN ${a.benchmark.sector.caenCode}`,
+    detail: tr("{s}/100 vs. mediana CAEN {c}", { s: a.benchmark.score, c: a.benchmark.sector.caenCode }),
   });
   return drivers.filter((d) => d.lostPoints >= 0.5).sort((x, y) => y.lostPoints - x.lostPoints);
 }
@@ -70,7 +71,7 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "quiz",
       title: "Instituie o rutină lunară de control financiar",
-      why: `Quiz-ul financiar are ${a.quiz.total}/100 (${a.quiz.levelLabel}). Banca verifică dacă managementul își cunoaște cifrele.`,
+      why: tr("Quiz-ul financiar are {q}/100 ({l}). Banca verifică dacă managementul își cunoaște cifrele.", { q: a.quiz.total, l: tr(a.quiz.levelLabel) }),
       steps: [
         "Programează în prima zi lucrătoare a lunii o revizie de 30 de minute cu contabilul: vânzări, încasări, top 5 clienți.",
         "Exportă lunar raportul e-Factura din SPV și compară-l cu extrasele bancare.",
@@ -87,9 +88,9 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "amount",
       title: "Redimensionează sau etapizează suma solicitată",
-      why: `Suma cerută (${ron(input.investment.requestedAmount ?? 0)}) depășește 50% din CA anualizată (${ron(m.annualizedRevenue)}).`,
+      why: tr("Suma cerută ({a}) depășește 50% din CA anualizată ({r}).", { a: ron(input.investment.requestedAmount ?? 0), r: ron(m.annualizedRevenue) }),
       steps: [
-        `Împarte investiția în etape; prima tranșă recomandată: max. ${ron(target)} (25% din CA).`,
+        tr("Împarte investiția în etape; prima tranșă recomandată: max. {t} (25% din CA).", { t: ron(target) }),
         "Analizează leasing pentru echipamente în locul creditului clasic.",
         "Atașează la cerere un buget pe etape cu venituri suplimentare estimate.",
       ],
@@ -103,7 +104,7 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "legal",
       title: "Clarifică dosarele din portal.just.ro",
-      why: `Verificarea juridică are ${input.legal.legalScore}/100 (${input.legal.totalFound} dosare relevante).`,
+      why: tr("Verificarea juridică are {s}/100 ({n} dosare relevante).", { s: input.legal.legalScore, n: input.legal.totalFound }),
       steps: [
         "Pregătește pentru bancă o notă explicativă pe fiecare dosar activ (stadiu, sumă, provizion).",
         "Închide prin tranzacție litigiile comerciale mici, unde e posibil.",
@@ -119,11 +120,11 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "concentration",
       title: "Diversifică portofoliul de clienți",
-      why: `${m.topClients[0]?.name} generează ${pct(m.topClientSharePct)} din vânzări${m.topClientSharePct > 50 ? " — dependență critică" : ""}.`,
+      why: `${tr("{c} generează {p} din vânzări", { c: m.topClients[0]?.name ?? "—", p: pct(m.topClientSharePct) })}${m.topClientSharePct > 50 ? tr(" — dependență critică") : ""}.`,
       steps: [
         "Țintește 3 clienți noi din același segment (HoReCa / retail regional) în următoarele 90 de zile.",
         "Semnează contract-cadru cu clientul principal (volume minime, termen 12 luni) ca să reduci riscul de pierdere bruscă.",
-        `Obiectiv: clientul #1 sub 30% din vânzări (acum ${pct(m.topClientSharePct)}).`,
+        tr("Obiectiv: clientul #1 sub 30% din vânzări (acum {p}).", { p: pct(m.topClientSharePct) }),
       ],
       horizon: 90,
       priority: m.topClientSharePct > 50 ? "critică" : "ridicată",
@@ -135,7 +136,7 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "collections",
       title: "Accelerează încasările și recuperează restanțele",
-      why: `DSO ${num(m.dsoDays)} zile, ${pct(m.lateSharePct)} din valoare încasată cu întârziere, ${ron(m.overdueAmount)} restante la ${m.asOf}.`,
+      why: tr("DSO {d} zile, {l} din valoare încasată cu întârziere, {o} restante la {a}.", { d: num(m.dsoDays), l: pct(m.lateSharePct), o: ron(m.overdueAmount), a: m.asOf }),
       steps: [
         "Trimite remindere automate la scadență, +7 și +15 zile; oprește livrările la clienții cu restanțe > 30 zile.",
         "Oferă 1–2% discount pentru plata în 7 zile clienților mari.",
@@ -151,7 +152,7 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "dscr",
       title: "Crește marja de acoperire a ratelor (DSCR)",
-      why: `DSCR estimat ${num(a.business.dscr)}× — sub covenant-ul de 1,25× folosit de BCR pentru creditele de investiții.`,
+      why: tr("DSCR estimat {d}× — sub covenant-ul de 1,25× folosit de BCR pentru creditele de investiții.", { d: num(a.business.dscr) }),
       steps: [
         "Cere o perioadă de grație sau o maturitate mai lungă pentru creditul nou.",
         "Renegociază prețurile cu furnizorii principali pentru +1–2 pp marjă.",
@@ -167,7 +168,7 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "storno",
       title: "Redu stornările (facturi 381)",
-      why: `Stornările reprezintă ${pct(m.creditNotesSharePct3m)} din facturare în ultimele 3 luni (prag: 5%).`,
+      why: tr("Stornările reprezintă {p} din facturare în ultimele 3 luni (prag: 5%).", { p: pct(m.creditNotesSharePct3m) }),
       steps: [
         "Identifică primele 3 cauze de retur (calitate, erori de comandă, preț) și asignează un responsabil.",
         "Verifică comenzile mari înainte de facturare (dublă confirmare).",
@@ -184,10 +185,10 @@ export function buildActionPlan(a: Core, input: AssessmentInput): ActionItem[] {
     actions.push({
       id: "seasonality",
       title: "Pregătește lunile slabe: buffer de lichiditate",
-      why: `În lunile slabe marja (${ron(res.weakMonthsMargin)}/lună) acoperă ${num(res.ratio)}× obligațiile de ${ron(res.monthlyObligations)}/lună; vânzările variază de ${num(m.seasonalityRatio)}× între vârf și minim.`,
+      why: tr("În lunile slabe marja ({g}/lună) acoperă {r}× obligațiile de {o}/lună; vânzările variază de {s}× între vârf și minim.", { g: ron(res.weakMonthsMargin), r: num(res.ratio), o: ron(res.monthlyObligations), s: num(m.seasonalityRatio) }),
       steps: [
         gap > 0
-          ? `Constituie înainte de extrasezon o rezervă de cel puțin ${ron(gap * 3)} (deficitul lunar × 3 luni slabe).`
+          ? tr("Constituie înainte de extrasezon o rezervă de cel puțin {v} (deficitul lunar × 3 luni slabe).", { v: ron(gap * 3) })
           : "Constituie o rezervă de cash egală cu 1 lună de cheltuieli fixe înainte de lunile slabe.",
         "Solicită o linie de capital de lucru sezonieră în locul acoperirii din cash-ul curent.",
         "Negociază cu banca un grafic de rambursare cu rate mai mici în lunile de extrasezon.",

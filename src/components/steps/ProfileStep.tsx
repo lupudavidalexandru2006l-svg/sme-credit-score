@@ -5,11 +5,14 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Building2, CheckSquare, CircleAlert, CircleCheck, Lightbulb, LoaderCircle, Printer, Save, Scale, ShieldAlert, Square, TrendingDown, UserRound } from "lucide-react";
 import type { ActionItem, CourtCase, LegalCheckResult } from "@/types/scoring";
 import { caseImpact, CONFIDENCE_LABEL, impactLabel, scoreLegalImpact } from "@/lib/scoringEngine";
-import { num } from "@/lib/util";
+import { num, getNumberLocale } from "@/lib/util";
 import { useAssessment } from "../AssessmentProvider";
 import { ConsultantReport } from "../ConsultantReport";
 import { BankRecommendationSection } from "../BankRecommendationSection";
-import { UNLOCK_LABEL, useCan } from "../PlanGate";
+import { useCan, useUnlockLabel } from "../PlanGate";
+import { useLanguage } from "../LanguageProvider";
+import { PortfolioOverview } from "../PortfolioOverview";
+import { isDemoCompanyId } from "@/lib/demo";
 import { gateActionPlan } from "@/lib/pricing";
 import { apiFetch } from "@/lib/auth/client";
 import { HowWeScore } from "../HowWeScore";
@@ -19,15 +22,21 @@ import { DocumentChecklist } from "../DocumentChecklist";
 import { BankReportPrint } from "../BankReportPrint";
 import { ScoreRing } from "../charts";
 import { PageHeader, StepFooter } from "../Shell";
+import { AnalysisBody } from "./AnalysisStep";
+import { OfficialSourcesCard } from "../OfficialData";
 import { Badge, Button, Card, CardHeader, cx, ProgressBar, scoreTone, TONE_TEXT } from "../ui";
+import { tr } from "@/lib/i18n/tr";
 
 const PRIORITY_TONE = { critică: "red", ridicată: "amber", medie: "navy" } as const;
 
 function ActionCard({ a, done, onToggle }: { a: ActionItem; done?: boolean; onToggle?: () => void }) {
+  const { t } = useLanguage();
   return (
     <li className={cx("rounded-xl border bg-card p-4 transition-colors", done ? "border-emerald/40 bg-emerald-soft/30" : "border-line")}>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={PRIORITY_TONE[a.priority]}>Prioritate {a.priority}</Badge>
+        <Badge tone={PRIORITY_TONE[a.priority]}>
+          {t.profile.priority} {tr(a.priority)}
+        </Badge>
         {a.impactPoints > 0 && (
           <Badge tone="emerald">
             <ArrowRight size={11} /> +{num(a.impactPoints)} pct
@@ -37,17 +46,17 @@ function ActionCard({ a, done, onToggle }: { a: ActionItem; done?: boolean; onTo
       {onToggle ? (
         <button type="button" onClick={onToggle} className="mt-2 flex w-full items-start gap-2 text-left" aria-pressed={done}>
           {done ? <CheckSquare size={17} className="mt-0.5 shrink-0 text-emerald-strong" /> : <Square size={17} className="mt-0.5 shrink-0 text-faint" />}
-          <span className={cx("text-sm font-semibold", done ? "text-muted line-through" : "text-ink")}>{a.title}</span>
+          <span className={cx("text-sm font-semibold", done ? "text-muted line-through" : "text-ink")}>{tr(a.title)}</span>
         </button>
       ) : (
-        <p className="mt-2 text-sm font-semibold text-ink">{a.title}</p>
+        <p className="mt-2 text-sm font-semibold text-ink">{tr(a.title)}</p>
       )}
-      <p className="mt-1 text-xs text-muted">{a.why}</p>
+      <p className="mt-1 text-xs text-muted">{tr(a.why)}</p>
       <ul className="mt-3 space-y-1.5">
         {a.steps.map((s) => (
           <li key={s} className="flex items-start gap-2 text-xs text-ink">
             <span className="mt-1 h-3 w-3 shrink-0 rounded border border-line-strong" />
-            {s}
+            {tr(s)}
           </li>
         ))}
       </ul>
@@ -67,20 +76,20 @@ function LegalPartyReport({ icon, title, name, cases }: { icon: React.ReactNode;
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-navy-soft text-navy-3">{icon}</span>
           <div className="min-w-0">
             <p className="text-[11px] font-semibold text-faint">{title}</p>
-            <p className="truncate text-sm font-medium text-ink">{name || "nespecificat"}</p>
+            <p className="truncate text-sm font-medium text-ink">{name || tr("nespecificat")}</p>
           </div>
         </div>
         {name && (
           <Badge tone={integrityKillSwitch ? "red" : totalDeduction === 0 ? "emerald" : legalScore >= 80 ? "blue" : "amber"}>
-            {cases.length} dosare · {integrityKillSwitch ? "dosar critic" : `-${totalDeduction} p`} · {legalScore}/100
+            {tr("{n} dosare", { n: cases.length })} · {integrityKillSwitch ? tr("dosar critic") : `-${totalDeduction} p`} · {legalScore}/100
           </Badge>
         )}
       </div>
       {!name ? (
-        <p className="mt-3 text-xs text-muted">Numele nu a fost completat, deci nu a fost căutat.</p>
+        <p className="mt-3 text-xs text-muted">{tr("Numele nu a fost completat, deci nu a fost căutat.")}</p>
       ) : cases.length === 0 ? (
         <p className="mt-3 flex items-center gap-2 text-sm font-medium text-emerald-strong">
-          <CircleCheck size={16} /> Fără litigii, insolvențe sau executări silite pe acest nume.
+          <CircleCheck size={16} /> {tr("Fără litigii, insolvențe sau executări silite pe acest nume.")}
         </p>
       ) : (
         <ul className="mt-3 divide-y divide-line">
@@ -89,16 +98,16 @@ function LegalPartyReport({ icon, title, name, cases }: { icon: React.ReactNode;
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="font-mono text-xs font-semibold text-ink">{c.numar}</p>
                 <span className={cx("text-xs font-medium", caseImpact(c).severity >= 3 ? "text-red" : caseImpact(c).severity === 2 ? "text-amber" : "text-muted")}>
-                  Nivel {c.severity} · {c.severityLabel} · {impactLabel(c)}
+                  {tr("Nivel {n}", { n: c.severity })} · {tr(c.severityLabel)} · {tr(impactLabel(c))}
                 </span>
               </div>
               <p className="text-xs text-ink">
-                {c.kindLabel}: {c.obiect || "—"}
+                {tr(c.kindLabel)}: {c.obiect || "—"}
               </p>
               <p className="text-[11px] text-muted">
-                {c.outcomeLabel} · {c.partyRoles.join(" / ") || "rol necunoscut"} · {c.institutie}
+                {tr(c.outcomeLabel)} · {c.partyRoles.map((r) => tr(r)).join(" / ") || tr("rol necunoscut")} · {tr(c.institutie)}
                 {c.confidence &&
-                  ` · ${c.userVerdict === "confirmat" ? "confirmat de client" : c.userVerdict === "contestat" ? "contestat de client (omonim, de verificat după CNP)" : CONFIDENCE_LABEL[c.confidence].toLowerCase()}`}
+                  ` · ${c.userVerdict === "confirmat" ? tr("confirmat de client") : c.userVerdict === "contestat" ? tr("contestat de client (omonim, de verificat după CNP)") : tr(CONFIDENCE_LABEL[c.confidence]).toLowerCase()}`}
               </p>
             </li>
           ))}
@@ -112,6 +121,9 @@ export function ProfileStep() {
   const { assessment, company, quiz, investment, legal, legalLoading, uploads, markVisited, plan: activePlan, showUpgrade, payPerUse, saveSnapshot, doneActions, toggleAction } = useAssessment();
   const { final: f, drivers, plan, quiz: q, business: b } = assessment;
   const canExport = useCan("exportPdf");
+  const unlockLabel = useUnlockLabel();
+  const { t } = useLanguage();
+  const pr = t.profile;
   // Starter: preview of the top 2 actions, the rest blurred.
   const lockedActions = new Set(gateActionPlan(activePlan.planTier, plan, payPerUse).locked.map((a) => a.id));
   const [saving, setSaving] = useState(false);
@@ -121,6 +133,13 @@ export function ProfileStep() {
   const save = async () => {
     setSaving(true);
     setSaveMsg(null);
+    // Demo companies never reach Supabase: only the browser history keeps the snapshot.
+    if (isDemoCompanyId(company.id)) {
+      const snap = await saveSnapshot();
+      setSaveMsg(`${pr.demoSave} ${snap.message}`);
+      setSaving(false);
+      return;
+    }
     try {
       const r = await apiFetch("/api/assessments", {
         method: "POST",
@@ -128,9 +147,9 @@ export function ProfileStep() {
         body: JSON.stringify({ company, quiz, investment, legal, uploads }),
       }).then((x) => x.json());
       const snap = await saveSnapshot();
-      setSaveMsg([r.saved ? `Evaluare salvată în Supabase (scor recalculat pe server: ${r.finalScore}).` : (r.error ?? r.message), snap.message].filter(Boolean).join(" "));
+      setSaveMsg([r.saved ? tr("Evaluare salvată în Supabase (scor recalculat pe server: {s}).", { s: r.finalScore }) : tr(r.error ?? r.message ?? ""), tr(snap.message)].filter(Boolean).join(" "));
     } catch {
-      setSaveMsg("API indisponibil.");
+      setSaveMsg(pr.apiDown);
     } finally {
       setSaving(false);
     }
@@ -138,31 +157,31 @@ export function ProfileStep() {
 
   const pillars = [
     {
-      name: "Business",
+      name: pr.pillarBusiness,
       weight: "70%",
       score: f.pillars.business.score,
       points: f.pillars.business.points,
       max: 70,
-      detail: b.items.map((i) => `${i.label}: ${num(i.score)}`).join(" · "),
+      detail: b.items.map((i) => `${tr(i.label)}: ${num(i.score)}`).join(" · "),
     },
     {
-      name: "Factor uman",
+      name: pr.pillarHuman,
       weight: "15%",
       score: f.pillars.human.score,
       points: f.pillars.human.points,
       max: 15,
       detail:
         f.pillars.human.externalScore !== undefined
-          ? `Quiz ${q.total}/100 (${q.levelLabel}) · surse oficiale reale ${num(f.pillars.human.externalScore)}/100 (portal.just.ro ${assessment.legalScore ?? "indisponibil"}${assessment.legalScore !== null ? "/100" : ""})`
-          : `Quiz ${q.total}/100 (${q.levelLabel}) · verificări externe ${legalLoading ? "în curs" : "fără răspuns încă (nu intră în scor)"}`,
+          ? `Quiz ${q.total}/100 (${tr(q.levelLabel)}) · ${tr("surse oficiale reale")} ${num(f.pillars.human.externalScore)}/100 (portal.just.ro ${assessment.legalScore ?? tr("indisponibil")}${assessment.legalScore !== null ? "/100" : ""})`
+          : `Quiz ${q.total}/100 (${tr(q.levelLabel)}) · ${tr("verificări externe")} ${legalLoading ? tr("în curs") : tr("fără răspuns încă (nu intră în scor)")}`,
     },
     {
-      name: "Investiție",
+      name: pr.pillarInvestment,
       weight: "15%",
       score: f.pillars.investment.score,
       points: f.pillars.investment.points,
       max: 15,
-      detail: `Formular ${f.pillars.investment.formScore}/100 · benchmark sector orientativ ${num(f.pillars.investment.benchmarkScore)}/100`,
+      detail: tr("Formular {f}/100 · benchmark sector orientativ {b}/100", { f: f.pillars.investment.formScore, b: num(f.pillars.investment.benchmarkScore) }),
     },
   ];
   const maxLost = Math.max(...drivers.map((d) => d.lostPoints), 1);
@@ -175,30 +194,31 @@ export function ProfileStep() {
   return (
     <div className="animate-rise">
       <PageHeader
-        step={4}
-        title="Profil Credit Ready & plan 30–90 de zile"
-        subtitle="Scorul final explicat pe piloni, factorii care îl trag în jos și acțiunile concrete, prioritizate, pentru următoarele 90 de zile."
+        title={pr.title}
+        subtitle={pr.subtitle}
         action={
           <div className="no-print flex flex-wrap gap-2">
             <Button
               variant="secondary"
               onClick={() =>
-                canExport ? window.print() : showUpgrade("Exportul Raportului „Gata de Bancă” (Print/PDF) este inclus în Planul Pro, împreună cu planul complet de 30–90 de zile.")
+                canExport ? window.print() : showUpgrade(pr.exportUpsell)
               }
             >
-              <Printer size={15} /> Printează pagina
+              <Printer size={15} /> {pr.print}
             </Button>
             <BankReportPrint
               allowed={canExport}
-              onBlocked={() => showUpgrade("„Fișa Pre-Calificare Bancă” (PDF, 1 pagină A4) este inclusă în Planul Pro și în Pay-Per-Use (49 RON / analiză).")}
+              onBlocked={() => showUpgrade(pr.pdfUpsell)}
             />
             <Button onClick={save} disabled={saving}>
-              {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />} Salvează evaluarea
+              {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />} {pr.save}
             </Button>
           </div>
         }
       />
       {saveMsg && <p className="no-print -mt-3 mb-4 text-xs font-medium text-navy-3">{saveMsg}</p>}
+
+      <PortfolioOverview />
 
       <Card className="overflow-hidden p-0 sm:p-0">
         <div className="grid gap-0 xl:grid-cols-[300px_minmax(0,1fr)]">
@@ -209,22 +229,22 @@ export function ProfileStep() {
               <div className="grid h-[180px] w-[180px] place-items-center rounded-full border-8 border-line text-center">
                 <div>
                   <p className="text-4xl font-light text-faint">—</p>
-                  <p className="text-xs text-faint">scor incomplet</p>
+                  <p className="text-xs text-faint">{pr.incomplete}</p>
                 </div>
               </div>
             )}
-            <p className="mt-4 text-lg font-medium">{f.complete ? f.status : "Date reale lipsă"}</p>
-            {!f.complete && <p className="mt-1 max-w-[240px] text-center text-[11px] text-muted">Lipsesc: {(f.missing ?? []).join("; ")}.</p>}
-            <p className="text-xs text-muted">{company.name}</p>
+            <p className="mt-4 text-center text-lg font-medium">{f.complete ? (t.common.status[f.status] ?? f.status) : pr.missingData}</p>
+            {!f.complete && <p className="mt-1 max-w-[240px] text-center text-[11px] text-muted">{pr.missingList((f.missing ?? []).join("; "))}</p>}
+            <p className="max-w-full break-words text-center text-xs text-muted">{company.name}</p>
           </div>
-          <div className="p-6">
-            <p className="text-[11px] font-semibold text-faint">Formula aplicată</p>
+          <div className="min-w-0 p-5 sm:p-6">
+            <p className="text-[11px] font-semibold text-faint">{pr.formula}</p>
             {!f.complete && (
               <p className="mt-2 rounded-xl bg-amber-soft px-3.5 py-2.5 text-xs font-medium text-amber">
-                ScorFinal = 0,70 × S_Business + 0,15 × S_Uman + 0,15 × S_Investiție se calculează după ce completezi datele reale. Până atunci nu afișăm valori estimate.
+                {pr.formulaPending}
               </p>
             )}
-            <p className={cx("mt-2 font-mono text-sm leading-relaxed text-ink", !f.complete && "hidden")}>
+            <p className={cx("mt-2 break-words font-mono text-sm leading-relaxed text-ink", !f.complete && "hidden")}>
               0,70 × {num(f.pillars.business.score)} + 0,15 × {num(f.pillars.human.score)} + 0,15 × {num(f.pillars.investment.score)} = {num(f.rawScore)}
               {f.quizKillSwitch && (
                 <>
@@ -235,7 +255,7 @@ export function ProfileStep() {
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {pillars.map((p) => (
-                <div key={p.name} className="rounded-xl border border-line p-4">
+                <div key={p.name} className="flex h-full min-w-0 flex-col rounded-xl border border-line p-4">
                   <div className="flex items-baseline justify-between">
                     <p className="text-sm font-semibold text-ink">{p.name}</p>
                     <span className="text-[11px] font-semibold text-faint">{p.weight}</span>
@@ -243,7 +263,7 @@ export function ProfileStep() {
                   <p className={cx("mt-1 text-2xl font-medium", f.complete ? TONE_TEXT[scoreTone(p.score)] : "text-faint")}>{f.complete ? num(p.score) : "—"}</p>
                   <ProgressBar value={f.complete ? p.score : 0} className="mt-1.5" />
                   <p className="mt-2 text-xs font-medium text-ink">
-                    {f.complete ? num(p.points) : "—"} / {p.max} puncte
+                    {f.complete ? num(p.points) : "—"} {pr.pointsOf(p.max)}
                   </p>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted">{p.detail}</p>
                 </div>
@@ -253,61 +273,70 @@ export function ProfileStep() {
               <div className="mt-4 space-y-2">
                 {f.warnings.map((w) => (
                   <p key={w} className="flex items-start gap-2 rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm font-medium text-red">
-                    <ShieldAlert size={17} className="mt-0.5 shrink-0" /> {w}
+                    <ShieldAlert size={17} className="mt-0.5 shrink-0" /> {tr(w)}
                   </p>
                 ))}
               </div>
             )}
             {q.answered < 5 && (
               <p className="mt-3 flex items-center gap-2 text-xs font-medium text-amber">
-                <CircleAlert size={14} /> Quiz incomplet ({q.answered}/5) — scorul este provizoriu.
+                <CircleAlert size={14} /> {pr.quizIncomplete(q.answered)}
               </p>
             )}
           </div>
         </div>
       </Card>
 
+      {/* Official public-source verification — moved here from step 1, where it was just a "needs CUI" placeholder.
+          In the final report the actual S_VerificăriExterne score is revealed. */}
+      <div className="mt-5">
+        <OfficialSourcesCard />
+      </div>
+
+      {/* The old step-2 analysis is now part of the final report, right under the score. */}
+      <AnalysisBody />
+
       <WhatIfSimulator />
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <Card>
-          <CardHeader icon={<TrendingDown size={18} />} title="Ce trage scorul în jos" subtitle="Puncte pierdute din scorul final, pe fiecare factor." />
-          {!f.complete && <p className="text-xs text-muted">Factorii apar după ce scorul e complet (facturi e-Factura, date declarate, o verificare externă).</p>}
+          <CardHeader icon={<TrendingDown size={18} />} title={pr.dragTitle} subtitle={pr.dragSubtitle} />
+          {!f.complete && <p className="text-xs text-muted">{pr.dragPending}</p>}
           <ul className={cx("space-y-3.5", !f.complete && "hidden")}>
             {drivers.slice(0, 6).map((d) => (
               <li key={d.id}>
                 <div className="flex items-baseline justify-between gap-3">
                   <p className="text-sm font-semibold text-ink">
-                    {d.label} <span className="text-[11px] font-medium text-faint">· {d.pillar}</span>
+                    {tr(d.label)} <span className="text-[11px] font-medium text-faint">· {tr(d.pillar)}</span>
                   </p>
                   <span className="shrink-0 text-sm font-medium text-red">−{num(d.lostPoints)}</span>
                 </div>
                 <div className="mt-1 h-1.5 rounded-full bg-canvas">
                   <div className="h-full rounded-full bg-red/70" style={{ width: `${(d.lostPoints / maxLost) * 100}%` }} />
                 </div>
-                <p className="mt-1 text-[11px] text-muted">{d.detail}</p>
+                <p className="mt-1 text-[11px] text-muted">{tr(d.detail)}</p>
               </li>
             ))}
           </ul>
         </Card>
 
         <Card>
-          <CardHeader icon={<Lightbulb size={18} />} title="Plan de acțiune 30–90 de zile" subtitle="Bifează acțiunile pe măsură ce le faci: scorul proiectat se actualizează imediat (impact estimat în puncte)." />
+          <CardHeader icon={<Lightbulb size={18} />} title={pr.planTitle} subtitle={pr.planSubtitle} />
           {f.complete && (
             <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-canvas px-4 py-3">
               <div>
-                <p className="text-[11px] text-muted">Scor curent</p>
+                <p className="text-[11px] text-muted">{pr.currentScore}</p>
                 <p className="text-2xl font-light tracking-tight text-ink">{num(f.finalScore)}</p>
               </div>
               <ArrowRight size={16} className="text-faint" />
               <div>
-                <p className="text-[11px] text-muted">Scor proiectat peste 90 de zile</p>
+                <p className="text-[11px] text-muted">{pr.projected}</p>
                 <p className="text-2xl font-light tracking-tight text-emerald-strong">{num(projected)}</p>
               </div>
               <Badge tone={projectedGain > 0 ? "emerald" : "neutral"} className="ml-auto">
-                {projectedGain > 0 ? `+${num(projectedGain)} pct din ${doneVisible.length} acțiuni bifate` : "bifează acțiunile realizate"}
+                {projectedGain > 0 ? pr.projectedGain(num(projectedGain), doneVisible.length) : pr.tickActions}
               </Badge>
-              <p className="w-full text-[11px] text-faint">Dacă realizezi toate acțiunile: până la {num(maxProjected)} puncte. Impactul este o estimare pe formula publică.</p>
+              <p className="w-full text-[11px] text-faint">{pr.maxProjected(num(maxProjected))}</p>
             </div>
           )}
           <div className="grid gap-4 md:grid-cols-3">
@@ -317,7 +346,7 @@ export function ProfileStep() {
                 <div key={h}>
                   <p className="mb-2 flex items-center gap-2 text-xs font-semibold text-navy-3">
                     <span className="grid h-6 w-6 place-items-center rounded-full border border-line-strong text-[10px] text-ink">{h}</span>
-                    {h === 30 ? "Primele 30 de zile" : h === 60 ? "Până la 60 de zile" : "Până la 90 de zile"}
+                    {pr.horizon[h]}
                   </p>
                   {items.length ? (
                     <ul className="space-y-3">
@@ -332,7 +361,7 @@ export function ProfileStep() {
                       )}
                     </ul>
                   ) : (
-                    <p className="rounded-xl border border-dashed border-line p-4 text-xs text-faint">Nicio acțiune urgentă în acest interval.</p>
+                    <p className="rounded-xl border border-dashed border-line p-4 text-xs text-faint">{pr.noAction}</p>
                   )}
                 </div>
               );
@@ -341,10 +370,10 @@ export function ProfileStep() {
           {lockedActions.size > 0 && (
             <div className="no-print mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-canvas px-4 py-3">
               <p className="text-xs text-muted">
-                Previzualizare: vezi top 2 acțiuni. Încă {lockedActions.size} acțiuni din planul de 30–90 de zile sunt în Planul Pro.
+                {pr.previewLocked(lockedActions.size)}
               </p>
               <Link href="/pricing" className="rounded-full bg-navy px-4 py-2 text-xs font-medium text-white hover:bg-navy-2">
-                {UNLOCK_LABEL}
+                {unlockLabel}
               </Link>
             </div>
           )}
@@ -362,27 +391,27 @@ export function ProfileStep() {
       <Card className="mt-5 break-inside-avoid">
         <CardHeader
           icon={<Scale size={18} />}
-          title="Verificare juridică portal.just.ro"
+          title={pr.legalTitle}
           subtitle={
             legal
-              ? `Scor legal ${legal.legalScore}/100 (intră 50% în Factor uman) · sursă: ${SOURCE_LABEL[legal.source]} · ${new Date(legal.checkedAt).toLocaleString("ro-RO")}`
-              : "Neverificat — nu intră în scor până la un răspuns al portalului. Rulează verificarea din pasul 1."
+              ? tr("Scor legal {s}/100 (intră 50% în Factor uman) · sursă: {src} · {d}", { s: legal.legalScore, src: tr(SOURCE_LABEL[legal.source]), d: new Date(legal.checkedAt).toLocaleString(getNumberLocale()) })
+              : pr.legalPending
           }
-          action={legal && <Badge tone={legal.source === "portal.just.ro" ? "emerald" : "red"}>{SOURCE_LABEL[legal.source]}</Badge>}
+          action={legal && <Badge tone={legal.source === "portal.just.ro" ? "emerald" : "red"}>{tr(SOURCE_LABEL[legal.source])}</Badge>}
         />
         {legal && (
           <>
             <div className="grid gap-3 md:grid-cols-2">
-              <LegalPartyReport icon={<Building2 size={16} />} title="Firmă" name={legal.query.companyName} cases={legal.cases.filter((c) => c.matchedBy === "firma")} />
-              <LegalPartyReport icon={<UserRound size={16} />} title="Administrator" name={legal.query.ceoName} cases={legal.cases.filter((c) => c.matchedBy !== "firma")} />
+              <LegalPartyReport icon={<Building2 size={16} />} title={pr.legalCompany} name={legal.query.companyName} cases={legal.cases.filter((c) => c.matchedBy === "firma")} />
+              <LegalPartyReport icon={<UserRound size={16} />} title={pr.legalAdmin} name={legal.query.ceoName} cases={legal.cases.filter((c) => c.matchedBy !== "firma")} />
             </div>
             {legal.integrityKillSwitch && (
               <p className="mt-3 flex items-start gap-2 rounded-xl border border-red/30 bg-red-soft px-4 py-3 text-sm font-medium text-red">
-                <ShieldAlert size={17} className="mt-0.5 shrink-0" /> Dosar critic (insolvență / infracțiune economică): scorul legal devine 0.
+                <ShieldAlert size={17} className="mt-0.5 shrink-0" /> {tr("Dosar critic (insolvență / infracțiune economică): scorul legal devine 0.")}
               </p>
             )}
             <p className="mt-3 text-[11px] leading-relaxed text-faint">
-              {legal.message} Scorul legal combină firma și administratorul; un dosar găsit pe ambele nume apare o singură dată, la firmă.
+              {tr(legal.message)} {tr("Scorul legal combină firma și administratorul; un dosar găsit pe ambele nume apare o singură dată, la firmă.")}
             </p>
           </>
         )}

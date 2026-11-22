@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { downloadInvoiceXml, listInvoiceMessages, openToken, spvConfig, SPV_TOKEN_COOKIE } from "@/lib/efactura/spv";
 
+/** Lists and downloads many invoices from ANAF SPV: allow up to 60 s on serverless hosts. */
+export const maxDuration = 60;
+
 /** Download cap per sync (ANAF rate limits the API; the next sync continues with the rest). */
 const MAX_DOWNLOADS = 150;
 
@@ -10,7 +13,7 @@ const MAX_DOWNLOADS = 150;
  * active company and the existing upload pipeline saves them in e_invoices and recalculates the score.
  */
 export async function POST(request: NextRequest) {
-  const cfg = spvConfig();
+  const cfg = spvConfig(request.nextUrl.origin);
   if (!cfg) return NextResponse.json({ ok: false, step: "auth", error: "Integrarea SPV nu este configurată (ANAF_OAUTH_CLIENT_ID / SECRET / REDIRECT_URI)." }, { status: 503 });
   const sealed = request.cookies.get(SPV_TOKEN_COOKIE)?.value;
   const token = sealed ? openToken(cfg, sealed) : null;

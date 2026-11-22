@@ -4,6 +4,9 @@ import { checkPortalJust } from "@/app/actions/checkPortalJust";
 import { scoreRealData } from "@/lib/multi-source-verifier";
 import { getCompanyRealData } from "@/lib/real-company-sources";
 
+/** Several external calls (ANAF, VIES, portal.just.ro): allow up to 30 s on serverless hosts. */
+export const maxDuration = 30;
+
 interface Body {
   cui?: string;
   companyName?: string;

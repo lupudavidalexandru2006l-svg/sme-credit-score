@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Card } from "@/components/ui";
+import { LegalDoc } from "@/components/LegalDoc";
 
 export const metadata: Metadata = {
   title: "Termeni și condiții",
-  description: "Condițiile de utilizare ale platformei Afghankingz Credit.",
+  description: "Condițiile de utilizare ale platformei CrediFit.",
 };
 
 const TERMS: { title: string; body: string }[] = [
   {
-    title: "Ce este Afghankingz Credit",
+    title: "Ce este CrediFit",
     body: "Un instrument de pregătire pentru finanțare: calculează un profil Credit Ready din datele reale ale firmei (facturi e-Factura, surse publice oficiale, date declarate) și propune un plan de acțiune. Nu este o ofertă de credit, o aprobare sau o consultanță financiară autorizată.",
   },
   {
@@ -30,18 +30,5 @@ const TERMS: { title: string; body: string }[] = [
 ];
 
 export default function TermsPage() {
-  return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <div>
-        <p className="text-xs text-faint">Termeni</p>
-        <h1 className="mt-2 text-[28px] font-normal leading-tight tracking-tight text-ink">Termeni și condiții</h1>
-      </div>
-      {TERMS.map((t) => (
-        <Card key={t.title}>
-          <h2 className="text-base font-medium text-ink">{t.title}</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">{t.body}</p>
-        </Card>
-      ))}
-    </div>
-  );
+  return <LegalDoc eyebrow="Termeni" title="Termeni și condiții" sections={TERMS} />;
 }

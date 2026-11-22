@@ -11,6 +11,8 @@ import { formatRon, isBillingCycle, isPlanTier, monthlyPrice, PAY_PER_USE, type 
 import { num } from "@/lib/util";
 import { useAuth } from "../AuthProvider";
 import { Badge, Button, Card, CardHeader, cx, inputCls, scoreTone, TONE_TEXT } from "../ui";
+import { tr } from "@/lib/i18n/tr";
+import { useLanguage } from "../LanguageProvider";
 
 const PLAN_LABEL: Record<BillingModel, string> = { starter: "Starter", pro: "Pro", business: "Business", "pay-per-use": "Pay-Per-Use" };
 const PLAN_TONE: Record<BillingModel, "neutral" | "emerald" | "blue" | "amber"> = { starter: "neutral", pro: "emerald", business: "blue", "pay-per-use": "amber" };
@@ -68,7 +70,7 @@ function localOverview(): AdminOverview {
     kpis: { users: null, companies: companies.length, assessments: evals, leads: 0, mrr, payPerUseRevenue: ppu * PAY_PER_USE.price, payPerUseCount: ppu },
     companies: rows,
     leads: [],
-    warnings: ["Supabase nu este configurat: panoul arată doar firmele și evaluările salvate în acest browser. Lead-urile B2B și utilizatorii necesită Supabase."],
+    warnings: [tr("Supabase nu este configurat: panoul arată doar firmele și evaluările salvate în acest browser. Lead-urile B2B și utilizatorii necesită Supabase.")],
   };
 }
 
@@ -87,26 +89,26 @@ function Kpi({ icon, label, value, hint }: { icon: React.ReactNode; label: strin
 
 function QuickView({ row, onClose }: { row: AdminCompanyRow; onClose: () => void }) {
   const items: [string, string][] = [
-    ["CUI", row.cui || "—"],
-    ["CAEN", row.caenCode || "—"],
-    ["Administrator", row.ceoName || "—"],
-    ["CNP (mascat)", row.ceoCnpMasked ?? "nedeclarat"],
-    ["Proprietar", row.owner === "cont" ? "cont utilizator" : "mod Guest"],
-    ["Plan", `${PLAN_LABEL[row.plan]}${row.plan === "pro" || row.plan === "business" ? ` · ${row.billingCycle === "yearly" ? "anual" : "lunar"}` : ""}`],
-    ["Ultimul scor", row.lastScore === null ? "—" : `${num(row.lastScore)} / 100${row.lastStatus ? ` · ${row.lastStatus}` : ""}`],
-    ["Ultima evaluare", dt(row.lastEvaluation)],
-    ["Evaluări salvate", String(row.evaluations)],
-    ["Creată", dt(row.createdAt)],
+    [tr("CUI"), row.cui || "—"],
+    [tr("CAEN"), row.caenCode || "—"],
+    [tr("Administrator"), row.ceoName || "—"],
+    [tr("CNP (mascat)"), row.ceoCnpMasked ?? tr("nedeclarat")],
+    [tr("Proprietar"), row.owner === "cont" ? tr("cont utilizator") : tr("mod Guest")],
+    [tr("Plan"), `${PLAN_LABEL[row.plan]}${row.plan === "pro" || row.plan === "business" ? ` · ${row.billingCycle === "yearly" ? tr("anual") : tr("lunar")}` : ""}`],
+    [tr("Ultimul scor"), row.lastScore === null ? "—" : `${num(row.lastScore)} / 100${row.lastStatus ? ` · ${row.lastStatus}` : ""}`],
+    [tr("Ultima evaluare"), dt(row.lastEvaluation)],
+    [tr("Evaluări salvate"), String(row.evaluations)],
+    [tr("Creată"), dt(row.createdAt)],
   ];
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-navy/30 p-4 backdrop-blur-sm" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={row.name} className="animate-rise w-full max-w-[460px] rounded-[24px] bg-white p-6 shadow-pop" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] text-faint">Profil firmă</p>
+            <p className="text-[11px] text-faint">{tr("Profil firmă")}</p>
             <h2 className="text-lg font-medium tracking-tight text-ink">{row.name}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Închide" className="text-faint hover:text-ink">
+          <button type="button" onClick={onClose} aria-label={tr("Închide")} className="text-faint hover:text-ink">
             <X size={18} />
           </button>
         </div>
@@ -125,6 +127,7 @@ function QuickView({ row, onClose }: { row: AdminCompanyRow; onClose: () => void
 
 /** /admin — global KPIs, every company with its score and plan, B2B leads. Admins only. */
 export function AdminPanel() {
+  useLanguage(); // hydration-safe language for tr()
   const { isAdmin, loading, session, demoAdmin, refreshProfile } = useAuth();
   const [data, setData] = useState<AdminOverview | null>(null);
   const [mode, setMode] = useState<"supabase" | "local" | null>(null);
@@ -145,7 +148,7 @@ export function AdminPanel() {
       } else if (r.mode === "local") {
         setData(localOverview());
         setMode("local");
-      } else setError(r.error ?? "Acces refuzat.");
+      } else setError(r.error ?? tr("Acces refuzat."));
     } catch {
       setError("API indisponibil.");
     } finally {
@@ -167,7 +170,7 @@ export function AdminPanel() {
   if (!isAdmin) {
     return (
       <Card className="mx-auto mt-6 max-w-[520px]">
-        <CardHeader icon={<ShieldAlert size={18} />} title="Acces doar pentru administratori" subtitle={session ? "Contul tău are rolul „user”. Un admin îți poate schimba rolul în tabela profiles." : "Autentifică-te cu un cont de administrator sau folosește accesul demo de pe pagina de autentificare."} />
+        <CardHeader icon={<ShieldAlert size={18} />} title={tr("Acces doar pentru administratori")} subtitle={session ? tr("Contul tău are rolul „user”. Un admin îți poate schimba rolul în tabela profiles.") : tr("Autentifică-te cu un cont de administrator sau folosește accesul demo de pe pagina de autentificare.")} />
         <Link href="/login?next=/admin" className="inline-flex rounded-full bg-navy px-5 py-2.5 text-sm font-medium text-white hover:bg-navy-2">
           Autentificare
         </Link>
@@ -185,11 +188,11 @@ export function AdminPanel() {
             {mode === "local" && <Badge tone="amber">date locale (browser)</Badge>}
             {mode === "supabase" && <Badge tone="emerald">Supabase live</Badge>}
           </p>
-          <h1 className="mt-1 text-[28px] font-normal tracking-tight text-ink">Afghankingz Credit — Admin</h1>
+          <h1 className="mt-1 text-[28px] font-normal tracking-tight text-ink">CrediFit — Admin</h1>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => void load()} disabled={busy}>
-            {busy ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} Reîncarcă
+            {busy ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} {tr("Reîncarcă")}
           </Button>
           {demoAdmin && (
             <Button
@@ -199,7 +202,7 @@ export function AdminPanel() {
                 await refreshProfile();
               }}
             >
-              <LogOut size={14} /> Ieși din demo
+              <LogOut size={14} /> {tr("Ieși din demo")}
             </Button>
           )}
         </div>
@@ -213,28 +216,28 @@ export function AdminPanel() {
       ))}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Kpi icon={<Users />} label="Total utilizatori" value={k?.users === null || k === undefined ? "—" : num(k.users)} hint="conturi Supabase Auth" />
-        <Kpi icon={<Building2 />} label="Firme verificate" value={k ? num(k.companies) : "—"} />
-        <Kpi icon={<ClipboardList />} label="Evaluări salvate" value={k ? num(k.assessments) : "—"} hint="assessment_history + assessments" />
-        <Kpi icon={<Handshake />} label="Lead-uri B2B" value={k ? num(k.leads) : "—"} />
+        <Kpi icon={<Users />} label={tr("Total utilizatori")} value={k?.users === null || k === undefined ? "—" : num(k.users)} hint={tr("conturi Supabase Auth")} />
+        <Kpi icon={<Building2 />} label={tr("Firme verificate")} value={k ? num(k.companies) : "—"} />
+        <Kpi icon={<ClipboardList />} label={tr("Evaluări salvate")} value={k ? num(k.assessments) : "—"} hint={tr("assessment_history + assessments")} />
+        <Kpi icon={<Handshake />} label={tr("Lead-uri B2B")} value={k ? num(k.leads) : "—"} />
         <Kpi
           icon={<Wallet />}
-          label="Venituri simulate"
+          label={tr("Venituri simulate")}
           value={k ? formatRon(k.mrr + k.payPerUseRevenue) : "—"}
-          hint={k ? `${formatRon(k.mrr)}/lună abonamente + ${formatRon(k.payPerUseRevenue)} pay-per-use (${k.payPerUseCount} analize)` : undefined}
+          hint={k ? tr("{a}/lună abonamente + {b} pay-per-use ({c} analize)", { a: formatRon(k.mrr), b: formatRon(k.payPerUseRevenue), c: k.payPerUseCount }) : undefined}
         />
       </div>
 
       <Card>
         <CardHeader
           icon={<Building2 size={18} />}
-          title="Toate firmele"
-          subtitle={`${rows.length} din ${data?.companies.length ?? 0} firme · scor și dată din ultima evaluare salvată`}
+          title={tr("Toate firmele")}
+          subtitle={tr("{a} din {b} firme · scor și dată din ultima evaluare salvată", { a: rows.length, b: data?.companies.length ?? 0 })}
           action={
             <div className="flex flex-wrap gap-2">
-              <input className={cx(inputCls, "w-56 py-2")} placeholder="Caută nume, CUI, administrator" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <input className={cx(inputCls, "w-56 py-2")} placeholder={tr("Caută nume, CUI, administrator")} value={query} onChange={(e) => setQuery(e.target.value)} />
               <select className={cx(inputCls, "w-40 py-2")} value={planFilter} onChange={(e) => setPlanFilter(e.target.value as BillingModel | "all")}>
-                <option value="all">Toate planurile</option>
+                <option value="all">{tr("Toate planurile")}</option>
                 {(Object.keys(PLAN_LABEL) as BillingModel[]).map((p) => (
                   <option key={p} value={p}>
                     {PLAN_LABEL[p]}
@@ -248,13 +251,13 @@ export function AdminPanel() {
           <table className="w-full min-w-[820px] text-left text-xs">
             <thead className="text-faint">
               <tr>
-                <th className="py-2 pr-3 font-semibold">Firmă</th>
-                <th className="py-2 pr-3 font-semibold">Administrator</th>
-                <th className="py-2 pr-3 text-right font-semibold">Scor</th>
-                <th className="py-2 pr-3 font-semibold">Plan activ</th>
-                <th className="py-2 pr-3 font-semibold">Ultima evaluare</th>
-                <th className="py-2 pr-3 text-right font-semibold">Evaluări</th>
-                <th className="py-2 text-right font-semibold">Profil</th>
+                <th className="py-2 pr-3 font-semibold">{tr("Firmă")}</th>
+                <th className="py-2 pr-3 font-semibold">{tr("Administrator")}</th>
+                <th className="py-2 pr-3 text-right font-semibold">{tr("Scor")}</th>
+                <th className="py-2 pr-3 font-semibold">{tr("Plan activ")}</th>
+                <th className="py-2 pr-3 font-semibold">{tr("Ultima evaluare")}</th>
+                <th className="py-2 pr-3 text-right font-semibold">{tr("Evaluări")}</th>
+                <th className="py-2 text-right font-semibold">{tr("Profil")}</th>
               </tr>
             </thead>
             <tbody>
@@ -263,7 +266,7 @@ export function AdminPanel() {
                   <td className="py-2.5 pr-3">
                     <p className="font-medium text-ink">{r.name}</p>
                     <p className="text-muted">
-                      {r.cui || "fără CUI"} · CAEN {r.caenCode || "—"} · {r.owner === "cont" ? "cont" : "guest"}
+                      {r.cui || tr("fără CUI")} · CAEN {r.caenCode || "—"} · {r.owner === "cont" ? "cont" : "guest"}
                     </p>
                   </td>
                   <td className="py-2.5 pr-3 text-ink">
@@ -286,7 +289,7 @@ export function AdminPanel() {
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-muted">
-                    {busy ? "Se încarcă…" : "Nicio firmă."}
+                    {busy ? tr("Se încarcă…") : tr("Nicio firmă.")}
                   </td>
                 </tr>
               )}
@@ -296,19 +299,19 @@ export function AdminPanel() {
       </Card>
 
       <Card>
-        <CardHeader icon={<Handshake size={18} />} title="Lead-uri B2B" subtitle="Cererile „Solicită Demo B2B” din pagina de prețuri (tabela b2b_leads)." />
+        <CardHeader icon={<Handshake size={18} />} title={tr("Lead-uri B2B")} subtitle={tr("Cererile „Solicită Demo B2B” din pagina de prețuri (tabela b2b_leads).")} />
         {(data?.leads.length ?? 0) === 0 ? (
-          <p className="text-xs text-muted">{mode === "local" ? "Lead-urile se salvează doar în Supabase." : "Niciun lead încă."}</p>
+          <p className="text-xs text-muted">{mode === "local" ? tr("Lead-urile se salvează doar în Supabase.") : tr("Niciun lead încă.")}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-xs">
               <thead className="text-faint">
                 <tr>
-                  <th className="py-2 pr-3 font-semibold">Data</th>
-                  <th className="py-2 pr-3 font-semibold">Nume</th>
-                  <th className="py-2 pr-3 font-semibold">Instituție</th>
-                  <th className="py-2 pr-3 font-semibold">Contact</th>
-                  <th className="py-2 font-semibold">Mesaj</th>
+                  <th className="py-2 pr-3 font-semibold">{tr("Data")}</th>
+                  <th className="py-2 pr-3 font-semibold">{tr("Nume")}</th>
+                  <th className="py-2 pr-3 font-semibold">{tr("Instituție")}</th>
+                  <th className="py-2 pr-3 font-semibold">{tr("Contact")}</th>
+                  <th className="py-2 font-semibold">{tr("Mesaj")}</th>
                 </tr>
               </thead>
               <tbody>

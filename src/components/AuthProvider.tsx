@@ -1,8 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { apiFetch, authConfigured, getBrowserSupabase, setAccessToken } from "@/lib/auth/client";
+import { clearDemoSession, readDemoSession, startDemoSession, subscribeDemoSession, type DemoSession } from "@/lib/auth/demo-session";
+import { useLanguage } from "./LanguageProvider";
 
 export interface AccountProfile {
   id: string;
@@ -22,10 +24,18 @@ interface AuthCtx {
   isAdmin: boolean;
   demoAdmin: boolean;
   signIn: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ ok: boolean; message: string }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ ok: boolean; message: string; redirect?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   setDemoAdmin: (on: boolean) => void;
+  /**
+   * Instant Demo Login: a simulated session kept in this browser only (no Supabase account, no token sent to
+   * the API, so the API routes treat it as guest mode and never answer 401). A real sign-in replaces it.
+   */
+  demoSession: DemoSession | null;
+  signInDemo: () => DemoSession;
+  /** Signed in with a real account OR with the demo session. */
+  signedIn: boolean;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -36,22 +46,28 @@ export function useAuth() {
   return c;
 }
 
-const translate = (msg: string) =>
+type AuthErrors = { invalid: string; notConfirmed: string; exists: string; password: string };
+const translate = (msg: string, e: AuthErrors) =>
   /invalid login credentials/i.test(msg)
-    ? "Email sau parolă greșită."
+    ? e.invalid
     : /email not confirmed/i.test(msg)
-      ? "Confirmă adresa de email din mesajul primit, apoi autentifică-te."
+      ? e.notConfirmed
       : /already registered|already exists/i.test(msg)
-        ? "Există deja un cont cu acest email. Autentifică-te."
+        ? e.exists
         : /password/i.test(msg)
-          ? "Parola trebuie să aibă cel puțin 8 caractere."
+          ? e.password
           : msg;
+
+const noDemo = () => null;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(authConfigured);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [demoAdmin, setDemoAdminState] = useState(false);
+  const { t } = useLanguage();
+  const a = t.auth;
+  const demoSession = useSyncExternalStore(subscribeDemoSession, readDemoSession, noDemo);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -92,23 +108,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const sb = getBrowserSupabase();
-    if (!sb) return { ok: false, message: "Conturile nu sunt activate: lipsesc cheile Supabase (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)." };
+    if (!sb) return { ok: false, message: a.errors.noKeys };
     const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { ok: false, message: translate(error.message) } : { ok: true, message: "Autentificat." };
-  }, []);
+    if (!error) clearDemoSession(); // a real account replaces the demo session
+    return error ? { ok: false, message: translate(error.message, a.errors) } : { ok: true, message: a.signedIn };
+  }, [a]);
 
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
     const sb = getBrowserSupabase();
-    if (!sb) return { ok: false, message: "Conturile nu sunt activate: lipsesc cheile Supabase (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)." };
-    if (password.length < 8) return { ok: false, message: "Parola trebuie să aibă cel puțin 8 caractere." };
+    if (!sb) return { ok: false, message: a.errors.noKeys };
+    if (password.length < 8) return { ok: false, message: a.errors.password };
     const { data, error } = await sb.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() } } });
-    if (error) return { ok: false, message: translate(error.message) };
-    return data.session
-      ? { ok: true, message: "Cont creat. Firmele și evaluările tale se salvează acum în cont." }
-      : { ok: true, message: "Cont creat. Confirmă adresa de email din mesajul primit, apoi autentifică-te." };
-  }, []);
+    if (error) return { ok: false, message: translate(error.message, a.errors) };
+    if (data.session) clearDemoSession();
+    return data.session ? { ok: true, message: a.createdWithSession, redirect: true } : { ok: true, message: a.createdConfirm };
+  }, [a]);
 
   const signOut = useCallback(async () => {
+    clearDemoSession();
     const sb = getBrowserSupabase();
     if (sb) await sb.auth.signOut();
     setAccessToken(null);
@@ -129,8 +146,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut,
       refreshProfile: loadProfile,
       setDemoAdmin: setDemoAdminState,
+      demoSession: session ? null : demoSession,
+      signInDemo: startDemoSession,
+      signedIn: Boolean(session || demoSession),
     }),
-    [loading, session, profile, demoAdmin, signIn, signUp, signOut, loadProfile],
+    [loading, session, profile, demoAdmin, signIn, signUp, signOut, loadProfile, demoSession],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

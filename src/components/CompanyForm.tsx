@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, CircleAlert, CircleCheck, Fingerprint, LoaderCircle, Plus, Save, ShieldCheck } from "lucide-react";
+import { Building2, CircleAlert, CircleCheck, Fingerprint, LoaderCircle, Lock, Plus, Save, ShieldCheck } from "lucide-react";
+import { PLANS } from "@/lib/pricing";
+import { useLanguage } from "./LanguageProvider";
 import { cleanCnp, validateCnp } from "@/lib/cnp";
+import { getNumberLocale } from "@/lib/util";
 import { caenWarning, cuiWarning } from "@/lib/company";
 import { cleanCaen, findSector, GENERAL_SECTOR, SECTOR_BENCHMARKS, sectorForCaen } from "@/lib/data/benchmarks";
 import { companyCounty, COUNTIES } from "@/lib/scoringEngine";
 import { useAssessment, type CompanyDraft } from "./AssessmentProvider";
 import { Badge, Button, Card, CardHeader, cx, Field, inputCls } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 const fromCompany = (c: {
   name: string;
@@ -36,7 +40,8 @@ const EMPTY_DRAFT: CompanyDraft = { name: "", cui: "", caenCode: "", sector: GEN
  * The fields re-sync when the active company changes (save or header switch); the save message stays.
  */
 export function CompanyForm() {
-  const { company, companies, saveCompany, supabase, setPendingDraft } = useAssessment();
+  const { company, companies, saveCompany, supabase, setPendingDraft, canAddCompany, plan, showUpgrade } = useAssessment();
+  const { t } = useLanguage();
   const [draft, setDraft] = useState<CompanyDraft>(() => fromCompany(company));
   // No company yet: the form starts directly in "new company" mode.
   const [isNew, setIsNew] = useState(() => !company.id);
@@ -101,24 +106,30 @@ export function CompanyForm() {
     <Card>
       <CardHeader
         icon={<Building2 size={18} />}
-        title={isNew ? "Firmă nouă" : "Date firmă"}
+        title={isNew ? tr("Firmă nouă") : tr("Date firmă")}
         subtitle={
           isNew
-            ? "Doar numele firmei și al administratorului sunt obligatorii. CUI și CAEN sunt opționale."
-            : `Firma activă · ${companies.length} ${companies.length === 1 ? "firmă salvată" : "firme salvate"}${supabase?.configured && !supabase.error ? " în Supabase" : " în browser"}`
+            ? tr("Doar numele firmei și al administratorului sunt obligatorii. CUI și CAEN sunt opționale.")
+            : tr(companies.length === 1 ? "Firma activă · {n} firmă salvată {where}" : "Firma activă · {n} firme salvate {where}", {
+                n: companies.length,
+                where: supabase?.configured && !supabase.error ? tr("în Supabase") : tr("în browser"),
+              })
         }
         action={
           !isNew && (
             <Button
               variant="secondary"
+              title={canAddCompany.allowed ? undefined : t.plan.companyLimit(PLANS[plan.planTier].name, canAddCompany.limit ?? 0)}
               onClick={() => {
+                // Plan limit (Starter 1 firmă, Pro 3): blocked with an upgrade prompt instead of a new form.
+                if (!canAddCompany.allowed) return showUpgrade(t.plan.companyLimit(PLANS[plan.planTier].name, canAddCompany.limit ?? 0));
                 setDraft(EMPTY_DRAFT);
                 setIsNew(true);
                 setTouched(false);
                 setResult(null);
               }}
             >
-              <Plus size={14} /> Firmă nouă
+              {canAddCompany.allowed ? <Plus size={14} /> : <Lock size={13} />} {canAddCompany.allowed ? t.plan.newCompany : t.plan.newCompanyLocked}
             </Button>
           )
         }
@@ -130,19 +141,19 @@ export function CompanyForm() {
           void submit();
         }}
       >
-        <Field label={<>Denumire firmă (SRL) <span className="text-red">*</span></>} hint={touched && nameMissing ? <span className="text-red">Obligatoriu.</span> : undefined}>
-          <input className={inputCls} value={draft.name} placeholder="ex. Bistro La Mama SRL" onChange={(e) => set({ name: e.target.value })} />
+        <Field label={<>{tr("Denumire firmă (SRL)")} <span className="text-red">*</span></>} hint={touched && nameMissing ? <span className="text-red">{tr("Obligatoriu.")}</span> : undefined}>
+          <input className={inputCls} value={draft.name} placeholder={tr("ex. Bistro La Mama SRL")} onChange={(e) => set({ name: e.target.value })} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
-            label={<>Administrator / CEO <span className="text-red">*</span></>}
-            hint={touched && ceoMissing ? <span className="text-red">Obligatoriu.</span> : "Căutat și el în portal.just.ro (potrivire pe numele complet)."}
+            label={<>{tr("Administrator / CEO")} <span className="text-red">*</span></>}
+            hint={touched && ceoMissing ? <span className="text-red">{tr("Obligatoriu.")}</span> : tr("Căutat și el în portal.just.ro (potrivire pe numele complet).")}
           >
-            <input className={inputCls} value={draft.ceoName} placeholder="ex. Ana Popescu" onChange={(e) => set({ ceoName: e.target.value })} />
+            <input className={inputCls} value={draft.ceoName} placeholder={tr("ex. Ana Popescu")} onChange={(e) => set({ ceoName: e.target.value })} />
           </Field>
-          <Field label={<>Județul sediului <span className="text-faint">(opțional)</span></>} hint="Portalul nu are CNP: comparăm județul instanței ca să deosebim omonimii.">
+          <Field label={<>{tr("Județul sediului")} <span className="text-faint">{tr("(opțional)")}</span></>} hint={tr("Portalul nu are CNP: comparăm județul instanței ca să deosebim omonimii.")}>
             <select className={inputCls} value={draft.county ?? ""} onChange={(e) => set({ county: e.target.value || undefined })}>
-              <option value="">Nespecificat</option>
+              <option value="">{tr("Nespecificat")}</option>
               {COUNTIES.map((c) => (
                 <option key={c.name} value={c.name}>
                   {c.name}
@@ -153,47 +164,47 @@ export function CompanyForm() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
-            label={<>CUI <span className="text-faint">(opțional)</span></>}
-            hint={cuiWarning(draft.cui) ?? (draft.cui.trim() ? "Identifică facturile emise / primite." : "Fără CUI: facturile și portal.just.ro se potrivesc după numele firmei.")}
+            label={<>{tr("CUI")} <span className="text-faint">{tr("(opțional)")}</span></>}
+            hint={(cuiWarning(draft.cui) && tr(cuiWarning(draft.cui)!)) ?? (draft.cui.trim() ? tr("Identifică facturile emise / primite.") : tr("Fără CUI: facturile și portal.just.ro se potrivesc după numele firmei."))}
           >
-            <input className={inputCls} value={draft.cui} placeholder="ex. RO45127893" onChange={(e) => set({ cui: e.target.value.toUpperCase() })} />
+            <input className={inputCls} value={draft.cui} placeholder={tr("ex. RO45127893")} onChange={(e) => set({ cui: e.target.value.toUpperCase() })} />
           </Field>
           <Field
-            label={<>Cod CAEN <span className="text-faint">(opțional)</span></>}
-            hint={caenWarning(draft.caenCode) ?? (mapped ? `→ sector ${findSector(mapped).shortLabel}` : caen ? "Cod necunoscut în benchmark: alege sectorul mai jos." : "Lipsă: alege sectorul de activitate mai jos.")}
+            label={<>{tr("Cod CAEN")} <span className="text-faint">{tr("(opțional)")}</span></>}
+            hint={(caenWarning(draft.caenCode) && tr(caenWarning(draft.caenCode)!)) ?? (mapped ? `→ ${tr("sector")} ${tr(findSector(mapped).shortLabel)}` : caen ? tr("Cod necunoscut în benchmark: alege sectorul mai jos.") : tr("Lipsă: alege sectorul de activitate mai jos."))}
           >
-            <input className={inputCls} value={draft.caenCode} inputMode="numeric" placeholder="ex. 5610" onChange={(e) => set({ caenCode: e.target.value })} />
+            <input className={inputCls} value={draft.caenCode} inputMode="numeric" placeholder={tr("ex. 5610")} onChange={(e) => set({ caenCode: e.target.value })} />
           </Field>
         </div>
         <div className="rounded-xl border border-line p-3.5">
           <Field
             label={
               <span className="flex items-center gap-1.5">
-                <Fingerprint size={13} /> CNP Administrator / CEO <span className="text-faint">(opțional)</span>
+                <Fingerprint size={13} /> {tr("CNP Administrator / CEO")} <span className="text-faint">{tr("(opțional)")}</span>
               </span>
             }
             hint={
               cnpCheck ? (
                 cnpCheck.valid ? (
                   <span className="text-emerald-strong">
-                    Valid · {cnpCheck.info.masked} · născut(ă) {new Date(cnpCheck.info.birthDate).toLocaleDateString("ro-RO")} · județ {cnpCheck.info.county}
+                    {tr("Valid · {masked} · născut(ă) {date} · județ {county}", { masked: cnpCheck.info.masked, date: new Date(cnpCheck.info.birthDate).toLocaleDateString(getNumberLocale()), county: cnpCheck.info.county })}
                     {cnpCheck.info.sex ? ` · ${cnpCheck.info.sex}` : ""}
                   </span>
                 ) : (
-                  <span className="text-red">{cnpCheck.error}</span>
+                  <span className="text-red">{tr(cnpCheck.error)}</span>
                 )
               ) : company.ceoCnpMasked && !isNew ? (
                 <span>
-                  Salvat mascat: <strong className="font-mono">{company.ceoCnpMasked}</strong>. Lasă gol ca să-l păstrezi
+                  {tr("Salvat mascat:")} <strong className="font-mono">{company.ceoCnpMasked}</strong>. {tr("Lasă gol ca să-l păstrezi")}
                   {" · "}
                   <button type="button" className="underline hover:text-ink" onClick={() => set({ ceoCnp: "" })}>
-                    șterge CNP-ul
+                    {tr("șterge CNP-ul")}
                   </button>
                 </span>
               ) : draft.ceoCnp === "" && company.ceoCnpMasked ? (
-                <span className="text-amber">CNP-ul salvat va fi șters la salvare.</span>
+                <span className="text-amber">{tr("CNP-ul salvat va fi șters la salvare.")}</span>
               ) : (
-                "Folosit doar pentru a deosebi omonimii la verificarea administratorului (vârstă la data dosarului, județ)."
+                tr("Folosit doar pentru a deosebi omonimii la verificarea administratorului (vârstă la data dosarului, județ).")
               )
             }
           >
@@ -203,14 +214,14 @@ export function CompanyForm() {
               autoComplete="off"
               maxLength={13}
               value={draft.ceoCnp ?? ""}
-              placeholder={company.ceoCnpMasked && !isNew ? company.ceoCnpMasked : "13 cifre"}
+              placeholder={company.ceoCnpMasked && !isNew ? company.ceoCnpMasked : tr("13 cifre")}
               onChange={(e) => set({ ceoCnp: cleanCnp(e.target.value).slice(0, 13) })}
             />
           </Field>
           <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-emerald-soft/60 px-2.5 py-1.5 text-[11px] leading-relaxed text-emerald-strong">
             <ShieldCheck size={13} className="mt-0.5 shrink-0" />
             <span>
-              GDPR: CNP-ul este validat matematic (cheia 279146358279) și mascat — afișat doar ca <span className="font-mono">1900101******</span> în rapoarte. Valoarea completă nu se salvează și nu se trimite nicăieri.
+              {tr("GDPR: CNP-ul este validat matematic (cheia 279146358279) și mascat — afișat doar ca")} <span className="font-mono">1900101******</span> {tr("în rapoarte. Valoarea completă nu se salvează și nu se trimite nicăieri.")}
             </span>
           </p>
         </div>
@@ -222,21 +233,20 @@ export function CompanyForm() {
             onChange={(e) => set({ nameSearchConsent: e.target.checked })}
           />
           <span>
-            Administratorul este de acord să fie căutat după nume în dosarele publice de pe portal.just.ro (GDPR, art. 6 alin. 1 lit. a). Fără acord verificăm doar firma; datele sunt
-            folosite numai pentru această evaluare.
+            {tr("Administratorul este de acord să fie căutat după nume în dosarele publice de pe portal.just.ro (GDPR, art. 6 alin. 1 lit. a). Fără acord verificăm doar firma; datele sunt folosite numai pentru această evaluare.")}
           </span>
         </label>
         {mapped ? (
           <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            Sector pentru comparația cu industria: <Badge tone="emerald">{findSector(mapped).shortLabel}</Badge>
-            <span className="text-faint">mapat automat din CAEN {caen}</span>
+            {tr("Sector pentru comparația cu industria:")} <Badge tone="emerald">{tr(findSector(mapped).shortLabel)}</Badge>
+            <span className="text-faint">{tr("mapat automat din CAEN {caen}", { caen })}</span>
           </p>
         ) : (
-          <Field label="Sector de activitate" hint="Folosit în S_Investiție pentru comparația cu industria (valori de referință orientative p25 / mediană / p75, nu statistici oficiale).">
+          <Field label={tr("Sector de activitate")} hint={tr("Folosit în S_Investiție pentru comparația cu industria (valori de referință orientative p25 / mediană / p75, nu statistici oficiale).")}>
             <select className={inputCls} value={draft.sector} onChange={(e) => set({ sector: e.target.value })}>
               {SECTOR_BENCHMARKS.map((s) => (
                 <option key={s.caenCode} value={s.caenCode}>
-                  {s.shortLabel}
+                  {tr(s.shortLabel)}
                 </option>
               ))}
             </select>
@@ -246,7 +256,7 @@ export function CompanyForm() {
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button type="submit" disabled={busy || cnpInvalid || (!dirty && !isNew)}>
             {busy ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
-            {isNew ? "Salvează și analizează firma" : dirty ? "Salvează modificările" : "Firmă salvată"}
+            {isNew ? tr("Salvează și analizează firma") : dirty ? tr("Salvează modificările") : tr("Firmă salvată")}
           </Button>
           {isNew && company.id && (
             <Button
@@ -257,7 +267,7 @@ export function CompanyForm() {
                 setTouched(false);
               }}
             >
-              Renunță
+              {tr("Renunță")}
             </Button>
           )}
         </div>

@@ -6,6 +6,7 @@ import { annuityInstallment } from "@/lib/bcr-formulas";
 import { num, ron } from "@/lib/util";
 import { useAssessment } from "./AssessmentProvider";
 import { Badge, Card, CardHeader, cx } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 type ProductId = "investitii" | "linie" | "factoring" | "leasing";
 
@@ -22,18 +23,18 @@ interface Row {
 
 /** Which instrument fits the firm's main problem: long collections → factoring, equipment → investment / leasing... */
 function recommend(purpose: InvestmentPurpose | null, dso: number): { primary: ProductId; alternative: ProductId | null; why: string } {
-  if (dso > 45) return { primary: "factoring", alternative: purpose === "growth" ? "investitii" : "linie", why: `Clienții plătesc în ${Math.round(dso)} de zile (peste 45): factoringul transformă facturile în bani imediat, fără o rată fixă în plus.` };
+  if (dso > 45) return { primary: "factoring", alternative: purpose === "growth" ? "investitii" : "linie", why: tr("Clienții plătesc în {d} de zile (peste 45): factoringul transformă facturile în bani imediat, fără o rată fixă în plus.", { d: Math.round(dso) }) };
   switch (purpose) {
     case "growth":
-      return { primary: "investitii", alternative: "leasing", why: "Destinația este creșterea / utilajele: creditul de investiții pe 36–60 de luni; pentru echipamente, leasingul folosește chiar bunul ca garanție." };
+      return { primary: "investitii", alternative: "leasing", why: tr("Destinația este creșterea / utilajele: creditul de investiții pe 36–60 de luni; pentru echipamente, leasingul folosește chiar bunul ca garanție.") };
     case "working_capital":
-      return { primary: "linie", alternative: dso > 30 ? "factoring" : null, why: "Pentru stocuri și decalaje de plată, linia de credit costă doar pe suma folosită efectiv." };
+      return { primary: "linie", alternative: dso > 30 ? "factoring" : null, why: tr("Pentru stocuri și decalaje de plată, linia de credit costă doar pe suma folosită efectiv.") };
     case "marketing":
-      return { primary: "investitii", alternative: "linie", why: "Marketingul și digitalizarea se finanțează pe termen mediu, cu rată fixă, nu din linia de capital de lucru." };
+      return { primary: "investitii", alternative: "linie", why: tr("Marketingul și digitalizarea se finanțează pe termen mediu, cu rată fixă, nu din linia de capital de lucru.") };
     case "refinancing":
-      return { primary: "investitii", alternative: "linie", why: "Refinanțarea se face pe termen lung, ca rata lunară să scadă." };
+      return { primary: "investitii", alternative: "linie", why: tr("Refinanțarea se face pe termen lung, ca rata lunară să scadă.") };
     default:
-      return { primary: "investitii", alternative: null, why: "Completează destinația finanțării în Pasul 3 pentru o recomandare exactă." };
+      return { primary: "investitii", alternative: null, why: tr("Completează destinația finanțării în Pasul 3 pentru o recomandare exactă.") };
   }
 }
 
@@ -50,43 +51,43 @@ export function ProductComparator() {
   const rows: Row[] = [
     {
       id: "investitii",
-      name: "Credit de Investiții",
-      term: "36–60 luni",
-      destination: "Utilaje, extindere, tehnologie, refinanțare",
-      cost: "~8,5–10,5%/an",
+      name: tr("Credit de Investiții"),
+      term: tr("36–60 luni"),
+      destination: tr("Utilaje, extindere, tehnologie, refinanțare"),
+      cost: tr("~8,5–10,5%/an"),
       monthly: show(annuityInstallment(financed, 0.095, 60)),
-      monthlyHint: `anuitate 60 luni la 9,5% pe ${show(financed)}`,
-      guarantees: "Ipotecă / gaj pe bunuri, frecvent garanție FNGCIMM",
+      monthlyHint: tr("anuitate 60 luni la 9,5% pe {v}", { v: show(financed) }),
+      guarantees: tr("Ipotecă / gaj pe bunuri, frecvent garanție FNGCIMM"),
     },
     {
       id: "linie",
-      name: "Linie de Credit",
-      term: "12 luni, revolving",
-      destination: "Capital de lucru, stocuri, decalaje de încasare",
-      cost: "~8,5–10,5%/an doar pe suma folosită",
+      name: tr("Linie de Credit"),
+      term: tr("12 luni, revolving"),
+      destination: tr("Capital de lucru, stocuri, decalaje de încasare"),
+      cost: tr("~8,5–10,5%/an doar pe suma folosită"),
       monthly: show((amount * 0.095) / 12),
-      monthlyHint: "doar dobândă, dacă e folosită integral",
-      guarantees: "Cesiune de creanțe, ipotecă mobiliară pe conturi",
+      monthlyHint: tr("doar dobândă, dacă e folosită integral"),
+      guarantees: tr("Cesiune de creanțe, ipotecă mobiliară pe conturi"),
     },
     {
       id: "factoring",
-      name: "Factoring",
-      term: "30–120 zile / factură",
-      destination: "Clienți mari cu termene de plată lungi",
-      cost: "~8,5–10,5%/an + comision 0,3–1% / factură",
+      name: tr("Factoring"),
+      term: tr("30–120 zile / factură"),
+      destination: tr("Clienți mari cu termene de plată lungi"),
+      cost: tr("~8,5–10,5%/an + comision 0,3–1% / factură"),
       monthly: amount > 0 ? `~${ron((Math.min(amount, receivables * 0.8) * 0.095) / 12 + Math.min(amount, receivables * 0.8) * 0.005)}` : "—",
-      monthlyHint: `fără rată fixă; avans ~80% din creanțe (${ron(receivables)})`,
-      guarantees: "Facturile cedate (riscul trece pe debitor)",
+      monthlyHint: tr("fără rată fixă; avans ~80% din creanțe ({v})", { v: ron(receivables) }),
+      guarantees: tr("Facturile cedate (riscul trece pe debitor)"),
     },
     {
       id: "leasing",
-      name: "Leasing Echipamente",
-      term: "24–60 luni",
-      destination: "Echipamente, utilaje, autovehicule",
-      cost: "~8,5–10,2%/an, avans 15–20%",
+      name: tr("Leasing Echipamente"),
+      term: tr("24–60 luni"),
+      destination: tr("Echipamente, utilaje, autovehicule"),
+      cost: tr("~8,5–10,2%/an, avans 15–20%"),
       monthly: show(annuityInstallment(amount * 0.85, 0.0935, 60)),
-      monthlyHint: `60 luni, avans 15% (${show(amount * 0.15)})`,
-      guarantees: "Bunul finanțat (fără ipotecă imobiliară)",
+      monthlyHint: tr("60 luni, avans 15% ({v})", { v: show(amount * 0.15) }),
+      guarantees: tr("Bunul finanțat (fără ipotecă imobiliară)"),
     },
   ];
 
@@ -94,19 +95,19 @@ export function ProductComparator() {
     <Card className="mt-5 break-inside-avoid">
       <CardHeader
         icon={<Scale size={18} />}
-        title="Comparator rapid: Investiții vs. Linie de credit vs. Factoring vs. Leasing"
-        subtitle={amount > 0 ? `Pentru suma de ${ron(amount)}${own > 0 ? ` (aport ${num(own * 100)}%)` : ""}. Costuri orientative din piața din România.` : "Completează suma solicitată în Pasul 3 pentru ratele estimate."}
+        title={tr("Comparator rapid: Investiții vs. Linie de credit vs. Factoring vs. Leasing")}
+        subtitle={amount > 0 ? `${tr("Pentru suma de {v}", { v: ron(amount) })}${own > 0 ? ` (${tr("aport {p}%", { p: num(own * 100) })})` : ""}. ${tr("Costuri orientative din piața din România.")}` : tr("Completează suma solicitată în Pasul 3 pentru ratele estimate.")}
       />
       <p className="mb-4 rounded-xl bg-emerald-soft/60 px-4 py-3 text-sm text-ink">{rec.why}</p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-xs">
           <thead className="text-faint">
             <tr>
-              <th className="py-2 pr-3 font-semibold">Produs</th>
-              <th className="py-2 pr-3 font-semibold">Destinație ideală</th>
-              <th className="py-2 pr-3 font-semibold">Cost orientativ</th>
-              <th className="py-2 pr-3 text-right font-semibold">Rată lunară estimată</th>
-              <th className="py-2 font-semibold">Garanții necesare</th>
+              <th className="py-2 pr-3 font-semibold">{tr("Produs")}</th>
+              <th className="py-2 pr-3 font-semibold">{tr("Destinație ideală")}</th>
+              <th className="py-2 pr-3 font-semibold">{tr("Cost orientativ")}</th>
+              <th className="py-2 pr-3 text-right font-semibold">{tr("Rată lunară estimată")}</th>
+              <th className="py-2 font-semibold">{tr("Garanții necesare")}</th>
             </tr>
           </thead>
           <tbody>
@@ -117,8 +118,8 @@ export function ProductComparator() {
                   <td className="py-2.5 pr-3">
                     <p className="font-medium text-ink">{r.name}</p>
                     <p className="text-muted">{r.term}</p>
-                    {primary && <Badge tone="emerald" className="mt-1">Recomandat pentru profilul tău</Badge>}
-                    {r.id === rec.alternative && <Badge tone="blue" className="mt-1">Alternativă bună</Badge>}
+                    {primary && <Badge tone="emerald" className="mt-1">{tr("Recomandat pentru profilul tău")}</Badge>}
+                    {r.id === rec.alternative && <Badge tone="blue" className="mt-1">{tr("Alternativă bună")}</Badge>}
                   </td>
                   <td className="py-2.5 pr-3 text-ink">{r.destination}</td>
                   <td className="py-2.5 pr-3 text-ink">{r.cost}</td>

@@ -10,12 +10,12 @@ Next.js 16 (App Router, Turbopack) · TypeScript · Tailwind CSS v4 · Supabase 
 
 ```bash
 npm install
-npm run dev          # http://localhost:3000  → redirect la /onboarding
-npm test             # 29 de teste: formule BCR, quiz, parser UBL, multi-firmă, motor bănci, analiză juridică
+npm run dev          # http://localhost:3000 → pagina de home (landing)
+npm test             # 53 de teste: formule BCR, quiz, parser UBL, multi-firmă, motor bănci, analiză juridică
 npm run build        # verificare TypeScript + build de producție
 ```
 
-Fără nicio configurare aplicația rulează în **mod local** (date sintetice generate determinist, toate firmele și evaluările lor în `localStorage`, cheia `credit-ready-v3`).
+Fără nicio configurare aplicația rulează în **mod local** (date sintetice generate determinist, toate firmele și evaluările lor în `localStorage`, cheia `credit-ready-v4`).
 
 ### Cu Supabase (persistență)
 
@@ -37,16 +37,16 @@ Fără nicio configurare aplicația rulează în **mod local** (date sintetice g
 
 Facturile se atașează **doar firmei active** (selectorul din header). Pentru o firmă fără CUI, direcția (emisă / primită) se stabilește după numele normalizat al firmei din `AccountingSupplierParty` / `AccountingCustomerParty`.
 
-Fiecare upload arată o notificare „scor X → Y”, KPI-urile clipesc, iar porțiunea din XML apare cu verde în graficul lunar.
+Fiecare upload actualizează automat analiza și graficul; scorul se vede doar în raportul final.
 
 ## Flow (4 pași)
 
-1. **Onboarding & factor uman** — firmă și CEO obligatorii, CUI și CAEN opționale (CAEN → sector automat, altfel dropdown „Sector de activitate”), firmă nouă / existentă, verificare automată `portal.just.ro` (SOAP live cu fallback și mod simulat), quiz de 5 întrebări validat pe e-Factura, conectare cu platforma externă de quiz-uri.
-2. **Analiză business & e-Factura** — KPI-uri, grafic pe 12 luni, cele 5 sub-scoruri cu formula afișată, top clienți/furnizori, upload XML.
-3. **Investiție & sector** — formular în 3 întrebări (destinație, avans, sumă vs. CA anualizată + rată și DSCR estimate) și benchmark vizual față de sectorul CAEN.
-4. **Profil Credit Ready & plan** — scor final cu formula completată, factorii care trag scorul în jos, plan 30/60/90 de zile, **recomandare bancă & pachet de finanțare (România)**, „Cum calculăm scorul”, print/PDF, salvare în Supabase.
+1. **Date firmă, e-Factura & ANAF** (`/onboarding`) — datele firmei și ale administratorului (nume/CEO obligatorii, CUI și CAEN opționale, CNP mascat opțional), verificarea automată a surselor oficiale (ANAF, bilanț, VIES, ONRC, portal.just.ro), facturile e-Factura (SPV automat sau upload XML/ZIP) și cheltuielile fixe / ratele existente.
+2. **Quiz cunoștințe firmă** (`/quiz`) — 5 întrebări despre cifrele firmei, verificate automat față de e-Factura. **Fără punctaj vizibil.**
+3. **Analiză automată → Quiz investiție** — analiza datelor rulează automat în fundal (fără pagină separată), apoi 3 întrebări despre finanțare (`/investitie`): destinație, aport propriu, sumă solicitată.
+4. **Analiză finală & scor** (`/profil`) — la final, într-un singur raport: analiza business (KPI, grafic pe 12 luni, sub-indicatori, clienți/furnizori, benchmark CAEN, simulatoare), scorul final explicat pe piloni, factorii care îl trag în jos, planul 30/60/90 de zile, recomandarea bancă, print/PDF și salvare în Supabase. **Scorul apare doar aici.**
 
-În header: **Firmă activă / Istoric firme** — comuți între toate firmele salvate; fiecare își păstrează facturile, quiz-ul, investiția și verificarea juridică.
+În header: **Firmă activă / Istoric firme** — comuți între toate firmele salvate; fiecare își păstrează facturile, răspunsurile la quiz-uri, investiția și verificarea juridică.
 
 ## Formula
 
@@ -110,6 +110,14 @@ curl -X POST http://localhost:3000/api/quiz -H "Content-Type: application/json" 
 | portal.just.ro | `src/app/actions/checkPortalJust.ts` (Server Action SOAP + simulare) |
 | API | `src/app/api/{companies,dataset,invoices,assessments,legal-checks,quiz}/route.ts` |
 | Supabase | `src/lib/supabase/server.ts`, `supabase/schema.sql`, `supabase/seed.sql`, `scripts/generate-seed.mts` |
-| UI | `src/app/(flow)/*`, `src/components/*` |
+| UI flux | `src/app/(flow)/{onboarding,quiz,investitie,profil}`, `src/components/steps/{OnboardingStep,QuizStep,InvestmentStep,ProfileStep}.tsx` |
+| Home / landing | `src/app/page.tsx`, `src/components/home/*` |
+| Shell & navigație (pași, gărzi, sidebar) | `src/components/Shell.tsx`, `src/lib/useHideScores.ts` |
+| Analiza afișată doar în raportul final | `src/components/steps/AnalysisStep.tsx` — exportă `AnalysisBody` + `UploadPanel` |
+| Restul UI | `src/app/(flow)/*`, `src/components/*` |
 
 `legacy-mvp/` conține componentele MVP-ului anterior (UI neumorfic întunecat), păstrate pentru referință și excluse din build.
+
+## Licență
+
+Distribuit sub licența [MIT](LICENSE). Poți folosi, modifica și redistribui codul, cu păstrarea textului licenței.

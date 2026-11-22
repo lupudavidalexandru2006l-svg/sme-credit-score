@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Card } from "@/components/ui";
+import { LegalDoc } from "@/components/LegalDoc";
 
 export const metadata: Metadata = {
   title: "Politica de confidențialitate",
-  description: "Ce date prelucrează Afghankingz Credit, din ce surse, unde sunt păstrate și ce drepturi ai conform GDPR.",
+  description: "Ce date prelucrează CrediFit, din ce surse, unde sunt păstrate și ce drepturi ai conform GDPR.",
 };
 
 const SECTIONS: { title: string; body: string[] }[] = [
@@ -11,7 +11,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     title: "Ce date prelucrăm",
     body: [
       "Datele firmei introduse de tine: denumire, CUI, cod CAEN, județ, numele administratorului, cheltuielile fixe și datoriile declarate.",
-      "Facturile e-Factura (XML UBL 2.1) pe care le încarci: emitent, client, sume, date de emitere și scadență.",
+      "Facturile e-Factura (UBL 2.1) pe care le încarci: emitent, client, sume, date de emitere și scadență.",
       "Răspunsurile la quiz și la formularul de investiție.",
       "Pentru cererile B2B: nume, instituție, email, telefon și mesaj, doar cu acordul tău.",
     ],
@@ -50,22 +50,5 @@ const SECTIONS: { title: string; body: string[] }[] = [
 ];
 
 export default function PrivacyPage() {
-  return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      <div>
-        <p className="text-xs text-faint">Confidențialitate</p>
-        <h1 className="mt-2 text-[28px] font-normal leading-tight tracking-tight text-ink">Politica de confidențialitate</h1>
-      </div>
-      {SECTIONS.map((s) => (
-        <Card key={s.title}>
-          <h2 className="text-base font-medium text-ink">{s.title}</h2>
-          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
-            {s.body.map((b) => (
-              <li key={b}>{b}</li>
-            ))}
-          </ul>
-        </Card>
-      ))}
-    </div>
-  );
+  return <LegalDoc eyebrow="Confidențialitate" title="Politica de confidențialitate" sections={SECTIONS} />;
 }

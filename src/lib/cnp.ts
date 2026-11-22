@@ -14,6 +14,7 @@
  * Pure module (type-only imports): tested with `node --test`.
  */
 import type { CourtCase, LegalCheckResult } from "../types/scoring";
+import { tr } from "./i18n/tr.ts";
 
 export const CNP_CONTROL_KEY = "279146358279";
 
@@ -108,7 +109,7 @@ export function validateCnp(raw: string, today: string = new Date().toISOString(
   const cnp = cleanCnp(raw);
   if (cnp.length !== 13) return { valid: false, error: "CNP-ul are exact 13 cifre." };
   const s = cnp[0];
-  if (s === "0") return { valid: false, error: "Prima cifră (sex / secol) nu poate fi 0." };
+  if (s === "0") return { valid: false, error: tr("Prima cifră (sex / secol) nu poate fi 0.") };
   const yy = Number(cnp.slice(1, 3));
   const mm = Number(cnp.slice(3, 5));
   const dd = Number(cnp.slice(5, 7));
@@ -122,15 +123,15 @@ export function validateCnp(raw: string, today: string = new Date().toISOString(
   }
   const date = new Date(Date.UTC(year, mm - 1, dd));
   if (mm < 1 || mm > 12 || date.getUTCFullYear() !== year || date.getUTCMonth() !== mm - 1 || date.getUTCDate() !== dd) {
-    return { valid: false, error: "Data nașterii din CNP (cifrele 2–7) nu este o dată validă." };
+    return { valid: false, error: tr("Data nașterii din CNP (cifrele 2–7) nu este o dată validă.") };
   }
   const birthDate = date.toISOString().slice(0, 10);
-  if (birthDate > today) return { valid: false, error: "Data nașterii din CNP este în viitor." };
+  if (birthDate > today) return { valid: false, error: tr("Data nașterii din CNP este în viitor.") };
   const countyCode = cnp.slice(7, 9);
   const county = CNP_COUNTIES[countyCode];
-  if (!county) return { valid: false, error: `Codul de județ ${countyCode} (cifrele 8–9) nu există.` };
-  if (cnp.slice(9, 12) === "000") return { valid: false, error: "Numărul de ordine (cifrele 10–12) nu poate fi 000." };
-  if (cnpControlDigit(cnp.slice(0, 12)) !== Number(cnp[12])) return { valid: false, error: "Cifra de control nu corespunde (cheia 279146358279)." };
+  if (!county) return { valid: false, error: tr("Codul de județ {a} (cifrele 8–9) nu există.", { a: countyCode }) };
+  if (cnp.slice(9, 12) === "000") return { valid: false, error: tr("Numărul de ordine (cifrele 10–12) nu poate fi 000.") };
+  if (cnpControlDigit(cnp.slice(0, 12)) !== Number(cnp[12])) return { valid: false, error: tr("Cifra de control nu corespunde (cheia 279146358279).") };
   return {
     valid: true,
     info: {
@@ -179,12 +180,12 @@ export function applyCnpToLegal(
     const reasons = [...(c.confidenceReasons ?? [])];
     if (age < minAge && !c.userVerdict) {
       changed = true;
-      reasons.push(`CNP ${info.masked}: la data dosarului administratorul avea ${Math.max(0, age)} ani (sub ${minAge}) — omonim, exclus automat.`);
+      reasons.push(tr("CNP {a}: la data dosarului administratorul avea {b} ani (sub {c}) — omonim, exclus automat.", { a: info.masked, b: Math.max(0, age), c: minAge }));
       return { ...c, userVerdict: "contestat", confidence: "scazuta", confidenceReasons: reasons };
     }
     if (sameCounty && !reasons.some((r) => r.startsWith("CNP"))) {
       changed = true;
-      reasons.push(`CNP ${info.masked}: instanța este în județul de naștere din CNP (${info.county}).`);
+      reasons.push(tr("CNP {a}: instanța este în județul de naștere din CNP ({b}).", { a: info.masked, b: info.county }));
       return { ...c, confidenceReasons: reasons };
     }
     return c;

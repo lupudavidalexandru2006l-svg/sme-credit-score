@@ -18,13 +18,14 @@ import { parseEFacturaXml, type ParseResult } from "@/lib/efactura/parser";
 import { checkPortalJust } from "@/app/actions/checkPortalJust";
 import { scoreRealData, type MultiSourceVerificationReport } from "@/lib/multi-source-verifier";
 import { emptyRealData, withLegal, type CompanyRealData } from "@/lib/real-company-sources";
-import { DEFAULT_BILLING, DEFAULT_PLAN, isBillingCycle, isPlanTier, PLANS, splitUploadsByLimit, type BillingCycle, type PlanTier } from "@/lib/pricing";
+import { canAddCompany as canAddCompanyFor, DEFAULT_BILLING, DEFAULT_PLAN, isBillingCycle, isPlanTier, PLANS, splitUploadsByLimit, type BillingCycle, type PlanTier } from "@/lib/pricing";
 import { applyCnpToLegal, validateCnp } from "@/lib/cnp";
 import { courtCounties } from "@/lib/scoringEngine";
 import { mergeHistory, snapshotFromAssessment, type AssessmentSnapshot } from "@/lib/history";
 import { apiFetch } from "@/lib/auth/client";
-import { buildDemo, DEMO_COMPANY_ID } from "@/lib/demo";
+import { buildDemoPlan, isDemoCompanyId } from "@/lib/demo";
 import { useAuth } from "./AuthProvider";
+import { useLanguage } from "./LanguageProvider";
 
 export const EMPTY_QUIZ: QuizAnswers = {
   revenueEstimate: null,
@@ -38,7 +39,11 @@ export const EMPTY_INVESTMENT: InvestmentInput = { purpose: null, ownContributio
 /** Shown while no company exists yet: every step renders its empty state instead of another company's data. */
 export const BLANK_COMPANY: Company = { id: "", name: "", cui: "", caenCode: "", ceoName: "", city: "", monthlyFixedCosts: 0, existingMonthlyDebtService: 0, financialsDeclared: false, debts: [] };
 
-export type StepId = "onboarding" | "analiza" | "investitie" | "profil";
+/**
+ * Sequential flow (2026 redesign): date firmă → quiz cunoștințe → (analiză automată) → quiz investiție → raport final.
+ * "analiza" is kept only for workspaces saved by the previous flow; there is no page for it anymore.
+ */
+export type StepId = "onboarding" | "quiz" | "analiza" | "investitie" | "profil";
 
 export interface ScoreToast {
   id: number;
@@ -248,10 +253,16 @@ interface Ctx {
   /** Marks step 2 as confirmed (button "Continuă la Pasul 3"). */
   confirmStep2: () => void;
   isDemo: boolean;
-  /** Loads the complete demo company and unlocks steps 1-3. */
-  loadDemo: () => void;
-  /** Leaves the demo (removes it) and opens a blank company in step 1. */
+  /** Plan scenario of the loaded demo (Starter 1 firmă, Pro 3, Business 5); null outside demo mode. */
+  demoPlan: PlanTier | null;
+  /** Loads the demo companies of one plan scenario (replacing any previous demo) and unlocks steps 1-3. */
+  loadDemoPlan: (tier: PlanTier) => void;
+  /** Leaves the demo (removes every demo company) and opens a blank company in step 1. */
   startNewCompany: () => void;
+  /** Full assessment of ANY saved company (multi-company overview), from its own workspace only. */
+  assessCompany: (id: string) => Assessment | null;
+  /** Whether one more company may be added under the active plan (demo companies count only in demo mode). */
+  canAddCompany: { allowed: boolean; limit: number | null };
 }
 
 const AssessmentContext = createContext<Ctx | null>(null);
@@ -292,6 +303,9 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const autoChecked = useRef(new Set<string>());
   const { session } = useAuth();
   const accountId = session?.user.id ?? null;
+  // Engine texts (sub-score rules, action plan, bank reasons) are generated in the interface language:
+  // recompute them when it changes.
+  const { lang } = useLanguage();
 
   const company = useMemo(() => (activeId ? (companies.find((c) => c.id === activeId) ?? companies[0] ?? BLANK_COMPANY) : BLANK_COMPANY), [companies, activeId]);
   const companiesRef = useRef<Company[]>([]);
@@ -306,7 +320,8 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   const official = useMemo(() => withLegal(ws.official ?? emptyRealData(company.cui, ""), legal), [ws.official, company.cui, legal]);
   const verification = useMemo(
     () => scoreRealData(official, legal, { companyId: company.id, companyName: company.officialName || company.name, ceoName: company.ceoName }),
-    [official, legal, company.id, company.officialName, company.name, company.ceoName],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang: regenerate the texts in the new language
+    [official, legal, company.id, company.officialName, company.name, company.ceoName, lang],
   );
   const docs = useMemo(() => ws.docs ?? {}, [ws.docs]);
   const doneActions = useMemo(() => ws.doneActions ?? [], [ws.doneActions]);
@@ -323,7 +338,11 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
   );
   // Only the ACTIVE company's invoices: those stored in Supabase + the XML uploaded for it. Nothing generated.
   const invoices = useMemo(() => mergeInvoices(dataset.invoices, uploads), [dataset.invoices, uploads]);
-  const assessment = useMemo(() => computeAssessment({ company, invoices, quiz, investment, legal, verification, today }), [company, invoices, quiz, investment, legal, verification, today]);
+  const assessment = useMemo(
+    () => computeAssessment({ company, invoices, quiz, investment, legal, verification, today }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang: regenerate the texts in the new language
+    [company, invoices, quiz, investment, legal, verification, today, lang],
+  );
 
   const updateWorkspace = useCallback((id: string, fn: (w: Workspace) => Workspace) => {
     setWorkspaces((all) => ({ ...all, [id]: fn(all[id] ?? EMPTY_WORKSPACE) }));
@@ -455,7 +474,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
       const next = { planTier, billingCycle: billingCycle ?? plan.billingCycle };
       setPlans((all) => ({ ...all, [company.id]: next }));
       setUpgradePrompt(null);
-      void fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, ...next }) }).catch(() => undefined);
+      if (!isDemoCompanyId(company.id)) void fetch("/api/subscription", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, ...next }) }).catch(() => undefined);
     },
     [company, plan.billingCycle],
   );
@@ -480,7 +499,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     async (kind: QuizKind, done: boolean): Promise<string | null> => {
       updateWorkspace(activeId, (w) => (kind === "quiz" ? { ...w, quizDone: done } : { ...w, investmentDone: done }));
       if (!done) return null;
-      if (!supabaseLive) return "Rezultat salvat în browser.";
+      if (!supabaseLive || isDemoCompanyId(activeId)) return "Rezultat salvat în browser.";
       try {
         const r = (await apiFetch("/api/quiz-result", {
           method: "POST",
@@ -566,7 +585,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
           company: c,
           created,
           message: created
-            ? `Firmă nouă salvată (${id}). ${cui ? "Aduc datele oficiale de la ANAF, bilanțurile, VIES și portal.just.ro." : "Fără CUI: verific doar portal.just.ro; completează CUI-ul pentru ANAF, bilanț și VIES."} Pentru scor încarcă facturile e-Factura (XML) în Pasul 2.${extra}`
+            ? `Firmă nouă salvată (${id}). ${cui ? "Aduc datele oficiale de la ANAF, bilanțurile, VIES și portal.just.ro." : "Fără CUI: verific doar portal.just.ro; completează CUI-ul pentru ANAF, bilanț și VIES."} Pentru analiză încarcă facturile e-Factura în pasul 1.${extra}`
             : `Firma există deja (${id}) — am încărcat datele ei, nimic nu a fost șters.${extra}`,
         };
       };
@@ -780,6 +799,10 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
           : "Toți pilonii au fost recalculați doar pe facturile acestei firme.",
       );
 
+      if (isDemoCompanyId(target.id)) {
+        setPersistMessage("Mod Demo: facturile rămân doar în acest browser.");
+        return results;
+      }
       const rawXml = Object.fromEntries(results.filter((r) => r.ok && r.invoice).map((r) => [r.invoice!.id, files.find((f) => f.name === r.fileName)?.xml ?? ""]));
       apiFetch("/api/invoices", {
         method: "POST",
@@ -819,7 +842,7 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     if (!assessment.final.complete) return { ok: false, message: "Istoricul păstrează doar evaluări complete (cu date reale). Completează datele lipsă." };
     const snap = snapshotFromAssessment(assessment, company.id, investment, newId(), new Date().toISOString(), accountId);
     updateWorkspace(company.id, (w) => ({ ...w, snapshots: [...(w.snapshots ?? []), snap].slice(-100) }));
-    if (!supabaseLive) return { ok: true, message: `Evaluarea #${snapshots.length + 1} a fost salvată în istoricul din browser.` };
+    if (!supabaseLive || isDemoCompanyId(company.id)) return { ok: true, message: `Evaluarea #${snapshots.length + 1} a fost salvată în istoricul din browser.` };
     try {
       const r = (await apiFetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company, snapshot: snap }) }).then((x) => x.json())) as {
         ok: boolean;
@@ -851,51 +874,91 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     autoChecked.current.delete(company.id);
   }, [company.id, updateWorkspace]);
 
+  /**
+   * New flow gating: step1 = firmă + administrator introduse; step2 = quiz cunoștințe finalizat;
+   * step3 = quiz investiție finalizat. Analiza datelor rulează automat între pași (fără confirmare),
+   * deci nu mai depinde de `ws.step2Done`.
+   */
   const completedSteps: CompletedSteps = useMemo(() => {
-    const step1 = Boolean(company.id && company.name && company.ceoName) && quizCompleted.quiz;
-    const step2 = step1 && Boolean(ws.step2Done);
+    const step1 = Boolean(company.id && company.name && company.ceoName);
+    const step2 = step1 && quizCompleted.quiz;
     return { step1, step2, step3: step2 && quizCompleted.investment };
-  }, [company.id, company.name, company.ceoName, quizCompleted.quiz, quizCompleted.investment, ws.step2Done]);
+  }, [company.id, company.name, company.ceoName, quizCompleted.quiz, quizCompleted.investment]);
   const confirmStep2 = useCallback(() => updateWorkspace(activeId, (w) => ({ ...w, step2Done: true })), [activeId, updateWorkspace]);
   const isDemo = Boolean(ws.demo);
 
-  const loadDemo = useCallback(() => {
-    const d = buildDemo(today || new Date().toISOString().slice(0, 10));
-    autoChecked.current.add(DEMO_COMPANY_ID); // never query the real sources for the demo company
-    setRemote((all) => ({ ...all, [DEMO_COMPANY_ID]: null }));
-    setRemoteHistory((all) => ({ ...all, [DEMO_COMPANY_ID]: [] }));
-    setCompanies((list) => [...list.filter((c) => c.id !== DEMO_COMPANY_ID), d.company]);
-    setWorkspaces((all) => ({
-      ...all,
-      [DEMO_COMPANY_ID]: {
-        ...EMPTY_WORKSPACE,
-        uploads: d.uploads,
-        quiz: d.quiz,
-        investment: d.investment,
-        legal: d.legal,
-        official: d.official,
-        visited: ["onboarding", "analiza", "investitie", "profil"],
-        quizDone: true,
-        investmentDone: true,
-        step2Done: true,
-        demo: true,
-      },
-    }));
-    setPendingDraft(null);
-    switchCompany(DEMO_COMPANY_ID);
-  }, [today, switchCompany]);
+  const demoPlan = isDemo ? plan.planTier : null;
+
+  const loadDemoPlan = useCallback(
+    (tier: PlanTier) => {
+      const bundles = buildDemoPlan(tier, today || new Date().toISOString().slice(0, 10));
+      const ids = bundles.map((b) => b.company.id);
+      // Never query the real sources or Supabase for demo companies.
+      for (const id of ids) autoChecked.current.add(id);
+      setRemote((all) => ({ ...all, ...Object.fromEntries(ids.map((id) => [id, null])) }));
+      setRemoteHistory((all) => ({ ...all, ...Object.fromEntries(ids.map((id) => [id, []])) }));
+      setCompanies((list) => [...list.filter((c) => !isDemoCompanyId(c.id)), ...bundles.map((b) => b.company)]);
+      setWorkspaces((all) => {
+        const rest = Object.fromEntries(Object.entries(all).filter(([id]) => !isDemoCompanyId(id)));
+        for (const d of bundles) {
+          rest[d.company.id] = {
+            ...EMPTY_WORKSPACE,
+            uploads: d.uploads,
+            quiz: d.quiz,
+            investment: d.investment,
+            legal: d.legal,
+            official: d.official,
+            visited: ["onboarding", "quiz", "analiza", "investitie", "profil"],
+            quizDone: true,
+            investmentDone: true,
+            step2Done: true,
+            demo: true,
+          };
+        }
+        return rest;
+      });
+      setPlans((all) => ({
+        ...Object.fromEntries(Object.entries(all).filter(([id]) => !isDemoCompanyId(id))),
+        ...Object.fromEntries(ids.map((id) => [id, { planTier: tier, billingCycle: DEFAULT_BILLING }])),
+      }));
+      setUpgradePrompt(null);
+      setPendingDraft(null);
+      switchCompany(ids[0]);
+    },
+    [today, switchCompany],
+  );
 
   const startNewCompany = useCallback(() => {
-    setCompanies((list) => list.filter((c) => c.id !== DEMO_COMPANY_ID));
+    setCompanies((list) => list.filter((c) => !isDemoCompanyId(c.id)));
     setWorkspaces((all) => {
-      const rest = { ...all };
-      delete rest[DEMO_COMPANY_ID];
+      const rest = Object.fromEntries(Object.entries(all).filter(([id]) => !isDemoCompanyId(id)));
       delete rest[""];
       return rest;
     });
+    setPlans((all) => Object.fromEntries(Object.entries(all).filter(([id]) => !isDemoCompanyId(id))));
     setPendingDraft(null);
     switchCompany("");
   }, [switchCompany]);
+
+  const assessCompany = useCallback(
+    (id: string): Assessment | null => {
+      const c = companies.find((x) => x.id === id);
+      if (!c) return null;
+      const w = workspaces[id] ?? EMPTY_WORKSPACE;
+      const cLegal = applyCnpToLegal(w.legal, c.ceoCnpInfo && c.ceoCnpMasked ? { ...c.ceoCnpInfo, masked: c.ceoCnpMasked } : null, rescoreLegal, courtCounties);
+      const cOfficial = withLegal(w.official ?? emptyRealData(c.cui, ""), cLegal);
+      const cVerification = scoreRealData(cOfficial, cLegal, { companyId: c.id, companyName: c.officialName || c.name, ceoName: c.ceoName });
+      const cInvoices = mergeInvoices(remote[id] ?? [], w.uploads);
+      return computeAssessment({ company: c, invoices: cInvoices, quiz: w.quiz, investment: w.investment, legal: cLegal, verification: cVerification, today });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lang: regenerate the texts in the new language
+    [companies, workspaces, remote, today, lang],
+  );
+
+  const canAddCompany = useMemo(
+    () => canAddCompanyFor(plan.planTier, companies.filter((c) => isDemoCompanyId(c.id) === isDemo).length),
+    [plan.planTier, companies, isDemo],
+  );
 
   const value: Ctx = {
     company,
@@ -953,8 +1016,11 @@ export function AssessmentProvider({ children }: { children: ReactNode }) {
     completedSteps,
     confirmStep2,
     isDemo,
-    loadDemo,
+    demoPlan,
+    loadDemoPlan,
     startNewCompany,
+    assessCompany,
+    canAddCompany,
   };
 
   return <AssessmentContext.Provider value={value}>{children}</AssessmentContext.Provider>;

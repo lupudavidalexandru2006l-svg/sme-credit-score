@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (!sb) return NextResponse.json({ ok: false, mode: "local", error: "Supabase neconfigurat — cererea nu a putut fi salvată." }, { status: 503 });
   try {
     const row = await saveB2bLead(sb, lead);
-    return NextResponse.json({ ok: true, id: row.id, message: "Mulțumim! Echipa Afghankingz Credit vă contactează în maximum 2 zile lucrătoare." });
+    return NextResponse.json({ ok: true, id: row.id, message: "Mulțumim! Echipa CrediFit vă contactează în maximum 2 zile lucrătoare." });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "eroare Supabase" }, { status: 500 });
   }

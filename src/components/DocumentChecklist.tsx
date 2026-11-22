@@ -3,6 +3,7 @@
 import { CheckSquare, FolderCheck, Square, Zap } from "lucide-react";
 import { useAssessment } from "./AssessmentProvider";
 import { Badge, Card, CardHeader, cx, ProgressBar } from "./ui";
+import { tr } from "@/lib/i18n/tr";
 
 interface DocItem {
   /** Same ids as the consultant checklist (lib/consultant.ts) so both share the ticks. */
@@ -28,12 +29,12 @@ export function DocumentChecklist() {
   const hasInvoices = assessment.metrics.issuedCount + assessment.metrics.receivedCount > 0;
 
   const items: DocItem[] = [
-    { id: "bilant", label: "Bilanț financiar (ultimii 2 ani)", where: "Contabil; recipisa de depunere ANAF", auto: bilantOk ? `ANAF Bilanț verificat (${official.bilant?.length} ani publicați)` : null },
-    { id: "balanta", label: "Balanță de verificare pe ultima lună închisă", where: "Contabil", auto: null },
-    { id: "atestare", label: "Certificat de atestare fiscală ANAF", where: "SPV ANAF", auto: activeFiscal ? "ANAF confirmă: firmă activă fiscal" : null },
-    { id: "statut", label: "Act constitutiv actualizat & CUI", where: "ONRC / arhiva firmei", auto: null },
-    { id: "litigii", label: "Situație litigii / cazier fiscal", where: "portal.just.ro + SPV ANAF", auto: portalClean ? "portal.just.ro curat (0 puncte scăzute)" : null },
-    { id: "extrase", label: "Extrase bancare / situație e-Factura ultimele 6–12 luni", where: "Internet banking / SPV e-Factura", auto: hasInvoices ? `${assessment.metrics.issuedCount + assessment.metrics.receivedCount} facturi e-Factura încărcate` : null },
+    { id: "bilant", label: tr("Bilanț financiar (ultimii 2 ani)"), where: tr("Contabil; recipisa de depunere ANAF"), auto: bilantOk ? tr("ANAF Bilanț verificat ({n} ani publicați)", { n: official.bilant?.length ?? 0 }) : null },
+    { id: "balanta", label: tr("Balanță de verificare pe ultima lună închisă"), where: tr("Contabil"), auto: null },
+    { id: "atestare", label: tr("Certificat de atestare fiscală ANAF"), where: "SPV ANAF", auto: activeFiscal ? tr("ANAF confirmă: firmă activă fiscal") : null },
+    { id: "statut", label: tr("Act constitutiv actualizat & CUI"), where: tr("ONRC / arhiva firmei"), auto: null },
+    { id: "litigii", label: tr("Situație litigii / cazier fiscal"), where: "portal.just.ro + SPV ANAF", auto: portalClean ? tr("portal.just.ro curat (0 puncte scăzute)") : null },
+    { id: "extrase", label: tr("Extrase bancare / situație e-Factura ultimele 6–12 luni"), where: "Internet banking / SPV e-Factura", auto: hasInvoices ? tr("{n} facturi e-Factura încărcate", { n: assessment.metrics.issuedCount + assessment.metrics.receivedCount }) : null },
   ];
   const done = items.filter((d) => d.auto || docs[d.id]).length;
   const pct = Math.round((done / items.length) * 100);
@@ -42,9 +43,9 @@ export function DocumentChecklist() {
     <Card className="mt-5 break-inside-avoid">
       <CardHeader
         icon={<FolderCheck size={18} />}
-        title="Checklist „Dosar de Credit România”"
-        subtitle="Actele cerute de băncile din România. Cele dovedite deja de surse reale se bifează automat."
-        action={<Badge tone={pct === 100 ? "emerald" : pct >= 50 ? "blue" : "amber"}>{pct}% complet</Badge>}
+        title={tr("Checklist „Dosar de Credit România”")}
+        subtitle={tr("Actele cerute de băncile din România. Cele dovedite deja de surse reale se bifează automat.")}
+        action={<Badge tone={pct === 100 ? "emerald" : pct >= 50 ? "blue" : "amber"}>{tr("{p}% complet", { p: pct })}</Badge>}
       />
       <ProgressBar value={pct} tone={pct === 100 ? "emerald" : pct >= 50 ? "blue" : "amber"} className="mb-4 h-2" />
       <ul className="grid gap-2 md:grid-cols-2">
@@ -64,7 +65,7 @@ export function DocumentChecklist() {
                   <span className="block text-[11px] text-muted">{d.where}</span>
                   {d.auto && (
                     <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-emerald-strong">
-                      <Zap size={11} /> auto-bifat: {d.auto}
+                      <Zap size={11} /> {tr("auto-bifat:")} {d.auto}
                     </span>
                   )}
                 </span>

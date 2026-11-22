@@ -52,14 +52,33 @@ export function piecewise(value: number, points: [number, number][]) {
 /** "RO 12.345.678" -> "12345678" */
 export const normCui = (s: string) => s.replace(/\D/g, "");
 
-const ronFmt = new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 0 });
-const numFmt = new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 1 });
+/**
+ * Display locale for numbers and month names. Romanian by default (server, tests, scoring texts);
+ * the client LanguageProvider switches it to "en-GB" when the interface is in English.
+ */
+export type NumberLocale = "ro-RO" | "en-GB";
+let locale: NumberLocale = "ro-RO";
+const fmtCache = new Map<string, Intl.NumberFormat>();
+const fmt = (digits: number) => {
+  const key = `${locale}|${digits}`;
+  let f = fmtCache.get(key);
+  if (!f) fmtCache.set(key, (f = new Intl.NumberFormat(locale, { maximumFractionDigits: digits })));
+  return f;
+};
 
-export const ron = (n: number) => `${ronFmt.format(n)} RON`;
-export const pct = (n: number) => `${numFmt.format(n)}%`;
-export const num = (n: number) => numFmt.format(n);
+export const setNumberLocale = (l: NumberLocale) => {
+  locale = l;
+};
+export const getNumberLocale = () => locale;
 
-const MONTHS_RO = ["ian", "feb", "mar", "apr", "mai", "iun", "iul", "aug", "sep", "oct", "nov", "dec"];
-/** "2026-03" -> "mar 2026" */
+export const ron = (n: number) => `${fmt(0).format(n)} RON`;
+export const pct = (n: number) => `${fmt(1).format(n)}%`;
+export const num = (n: number) => fmt(1).format(n);
+
+const MONTHS: Record<NumberLocale, string[]> = {
+  "ro-RO": ["ian", "feb", "mar", "apr", "mai", "iun", "iul", "aug", "sep", "oct", "nov", "dec"],
+  "en-GB": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+};
+/** "2026-03" -> "mar 2026" (RO) / "Mar 2026" (EN) */
 export const monthLabel = (ym: string, withYear = true) =>
-  `${MONTHS_RO[Number(ym.slice(5, 7)) - 1]}${withYear ? ` ${ym.slice(0, 4)}` : ""}`;
+  `${MONTHS[locale][Number(ym.slice(5, 7)) - 1]}${withYear ? ` ${ym.slice(0, 4)}` : ""}`;

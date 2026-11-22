@@ -15,12 +15,13 @@
 import type { InvestmentPurpose, SectorBenchmark } from "../types/scoring";
 import { annuityInstallment, CREDIT_READY_MIN_SCORE, principalForInstallment } from "./bcr-formulas.ts";
 import { clamp, num, pct, ron } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 /** When the catalogue values were last checked against public bank offers. */
 export const BANK_DATA_AS_OF = "2025–2026";
 
 export const BANK_DISCLAIMER =
-  "Dobânzile, maturitățile și aporturile afișate sunt valori orientative din piața bancară din România (2025–2026), calculate pe baza ofertelor publice; costul final depinde de ROBOR/IRCC la data acordării și de analiza băncii. Recomandările bancare sunt orientative, bazate pe criterii publice de eligibilitate din piața bancară din România și pe datele analizate. Aceasta nu reprezintă o ofertă fermă sau o aprobare de credit.";
+  tr("Dobânzile, maturitățile și aporturile afișate sunt valori orientative din piața bancară din România (2025–2026), calculate pe baza ofertelor publice; costul final depinde de ROBOR/IRCC la data acordării și de analiza băncii. Recomandările bancare sunt orientative, bazate pe criterii publice de eligibilitate din piața bancară din România și pe datele analizate. Aceasta nu reprezintă o ofertă fermă sau o aprobare de credit.");
 
 // ---------------------------------------------------------------------------
 // Input / output
@@ -132,35 +133,35 @@ interface Product {
 }
 
 const KIND_LABEL: Record<ProductKind, string> = {
-  investitie: "Credit de investiții",
-  capital_lucru: "Capital de lucru / linie de credit",
+  investitie: tr("Credit de investiții"),
+  capital_lucru: tr("Capital de lucru / linie de credit"),
   factoring: "Factoring / scontare",
   microcredit: "Microcredit",
-  garantat: "Credit cu garanție de stat",
+  garantat: tr("Credit cu garanție de stat"),
   leasing: "Leasing / credit echipamente",
 };
 
 const PURPOSE_LABEL: Record<InvestmentPurpose, string> = {
-  growth: "creștere / utilaje / tehnologie",
-  working_capital: "capital de lucru",
-  marketing: "marketing și digitalizare",
-  refinancing: "refinanțare / lichiditate",
+  growth: tr("creștere / utilaje / tehnologie"),
+  working_capital: tr("capital de lucru"),
+  marketing: tr("marketing și digitalizare"),
+  refinancing: tr("refinanțare / lichiditate"),
 };
 
 const stabilitySignal = (x: BankMatchInput, weight: number, maxCv: number): Criterion => ({
   weight,
   fit: x.revenueCv <= maxCv ? 1 : x.revenueCv <= maxCv + 0.15 ? 0.5 : 0.15,
-  pro: `Încasări stabile: volatilitate lunară (CV) ${num(x.revenueCv)}, sub pragul de ${num(maxCv)} urmărit de bancă.`,
-  con: `Volatilitatea veniturilor (CV ${num(x.revenueCv)}) depășește ${num(maxCv)}: netezește încasările (contracte-cadru, abonamente) înainte de aplicare.`,
+  pro: tr("Încasări stabile: volatilitate lunară (CV) {a}, sub pragul de {b} urmărit de bancă.", { a: num(x.revenueCv), b: num(maxCv) }),
+  con: tr("Volatilitatea veniturilor (CV {a}) depășește {b}: netezește încasările (contracte-cadru, abonamente) înainte de aplicare.", { a: num(x.revenueCv), b: num(maxCv) }),
 });
 
 export const BANK_PRODUCTS: Product[] = [
   {
     id: "bcr-investitii",
     bank: "BCR",
-    product: "Credit de Investiții IMM / George pentru Afaceri",
+    product: tr("Credit de Investiții IMM / George pentru Afaceri"),
     kind: "investitie",
-    idealFor: "Creștere, utilaje și echipamente, cu aport propriu de minimum 15% și DSCR ≥ 1,25.",
+    idealFor: tr("Creștere, utilaje și echipamente, cu aport propriu de minimum 15% și DSCR ≥ 1,25."),
     minScore: 68,
     minDscr: 1.25,
     minOwnPct: 15,
@@ -177,9 +178,9 @@ export const BANK_PRODUCTS: Product[] = [
   {
     id: "bcr-capital-lucru",
     bank: "BCR",
-    product: "Linie de Credit / Capital de Lucru BCR",
+    product: tr("Linie de Credit / Capital de Lucru BCR"),
     kind: "capital_lucru",
-    idealFor: "Stocuri sezoniere și decalaje de încasare (DSO peste 30 de zile).",
+    idealFor: tr("Stocuri sezoniere și decalaje de încasare (DSO peste 30 de zile)."),
     minScore: 60,
     minDscr: 1.2,
     minOwnPct: 0,
@@ -187,7 +188,7 @@ export const BANK_PRODUCTS: Product[] = [
     rateRangePct: [8.5, 10.5],
     rateLabel: "ROBOR 3M/6M + 2,5–4,2 pp (~8,5–10,5%/an)",
     maturityMonths: [12, 36],
-    maturityLabel: "12–36 luni (revolving, reînnoibilă)",
+    maturityLabel: tr("12–36 luni (revolving, reînnoibilă)"),
     repayment: "dobanda",
     maxRevenueShare: 0.25,
     maxAbsolute: 3_000_000,
@@ -195,14 +196,14 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 15,
         fit: x.dsoDays > 30 ? 1 : x.dsoDays > 20 ? 0.55 : 0.2,
-        pro: `Decalaj real de încasare: DSO ${num(x.dsoDays)} zile — linia acoperă golul dintre plata furnizorilor și încasarea clienților.`,
-        con: `DSO de doar ${num(x.dsoDays)} zile: nevoia de capital de lucru e mică; justifică linia prin stocuri sau contracte noi.`,
+        pro: tr("Decalaj real de încasare: DSO {a} zile — linia acoperă golul dintre plata furnizorilor și încasarea clienților.", { a: num(x.dsoDays) }),
+        con: tr("DSO de doar {a} zile: nevoia de capital de lucru e mică; justifică linia prin stocuri sau contracte noi.", { a: num(x.dsoDays) }),
       },
       {
         weight: 10,
         fit: x.seasonalityRatio >= 1.4 ? 1 : 0.5,
-        pro: `Vânzările variază de ${num(x.seasonalityRatio)}× între luna de vârf și cea mai slabă: linia finanțează stocurile de sezon.`,
-        con: `Sezonalitate redusă (${num(x.seasonalityRatio)}×): argumentează nevoia de lichiditate cu un buget de stocuri.`,
+        pro: tr("Vânzările variază de {a}× între luna de vârf și cea mai slabă: linia finanțează stocurile de sezon.", { a: num(x.seasonalityRatio) }),
+        con: tr("Sezonalitate redusă ({a}×): argumentează nevoia de lichiditate cu un buget de stocuri.", { a: num(x.seasonalityRatio) }),
       },
     ],
   },
@@ -211,15 +212,15 @@ export const BANK_PRODUCTS: Product[] = [
     bank: "BCR",
     product: "Factoring / Scontare Facturi BCR",
     kind: "factoring",
-    idealFor: "Clienți mari, solvabili, cu termene de plată lungi (DSO ≥ 45 de zile).",
+    idealFor: tr("Clienți mari, solvabili, cu termene de plată lungi (DSO ≥ 45 de zile)."),
     minScore: 50,
     minDscr: 0,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, refinancing: 0.45, marketing: 0.2, growth: 0.15 },
     rateRangePct: [8.5, 10.5],
     maturityMonths: [1, 4],
-    maturityLabel: "30–120 de zile pe factură, revolving",
-    rateLabel: "~8,5–10,5%/an + comision de factoring",
+    maturityLabel: tr("30–120 de zile pe factură, revolving"),
+    rateLabel: tr("~8,5–10,5%/an + comision de factoring"),
     repayment: "factoring",
     maxRevenueShare: 0.3,
     maxAbsolute: 4_000_000,
@@ -227,29 +228,29 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 30,
         fit: x.dsoDays >= 45 ? 1 : x.dsoDays >= 30 ? 0.5 : 0.1,
-        pro: `Termen mediu de încasare ${num(x.dsoDays)} zile: facturile pot fi transformate în bani imediat (avans de ~80%).`,
-        con: `DSO ${num(x.dsoDays)} zile, sub pragul de 45 de zile de la care factoringul devine rentabil.`,
+        pro: tr("Termen mediu de încasare {a} zile: facturile pot fi transformate în bani imediat (avans de ~80%).", { a: num(x.dsoDays) }),
+        con: tr("DSO {a} zile, sub pragul de 45 de zile de la care factoringul devine rentabil.", { a: num(x.dsoDays) }),
       },
       {
         weight: 15,
         fit: x.topClientSharePct >= 30 ? 1 : x.topClientSharePct >= 20 ? 0.65 : 0.3,
-        pro: `Clientul #1 generează ${pct(x.topClientSharePct)} din vânzări: riscul se mută pe un debitor mare, analizat separat de bancă.`,
-        con: `Clienții sunt fragmentați (clientul #1 ${pct(x.topClientSharePct)}): factoringul pe mulți debitori mici e mai scump.`,
+        pro: tr("Clientul #1 generează {a} din vânzări: riscul se mută pe un debitor mare, analizat separat de bancă.", { a: pct(x.topClientSharePct) }),
+        con: tr("Clienții sunt fragmentați (clientul #1 {a}): factoringul pe mulți debitori mici e mai scump.", { a: pct(x.topClientSharePct) }),
       },
     ],
   },
   {
     id: "bt-mic",
     bank: "Banca Transilvania",
-    product: "BT Mic — credit pentru afaceri mici (până la 200.000 RON)",
+    product: tr("BT Mic — credit pentru afaceri mici (până la 200.000 RON)"),
     kind: "microcredit",
-    idealFor: "Firme mici, scor mediu (50–70), nevoie rapidă de capital de lucru sau echipamente, fără garanții imobiliare grele.",
+    idealFor: tr("Firme mici, scor mediu (50–70), nevoie rapidă de capital de lucru sau echipamente, fără garanții imobiliare grele."),
     minScore: 50,
     minDscr: 1.15,
     minOwnPct: 0,
     purposeFit: { working_capital: 1, growth: 0.9, marketing: 0.8, refinancing: 0.3 },
     rateRangePct: [11, 13.5],
-    rateLabel: "~11–13,5%/an, fără garanții imobiliare",
+    rateLabel: tr("~11–13,5%/an, fără garanții imobiliare"),
     maturityMonths: [12, 60],
     repayment: "anuitate",
     maxRevenueShare: 0.3,
@@ -258,23 +259,23 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 15,
         fit: x.annualizedRevenue <= 5_000_000 ? 1 : x.annualizedRevenue <= 10_000_000 ? 0.55 : 0.2,
-        pro: `Cifră de afaceri anualizată de ${ron(x.annualizedRevenue)}: profil de firmă mică, potrivit microfinanțării rapide.`,
-        con: `CA anualizată de ${ron(x.annualizedRevenue)} depășește profilul tipic de microcredit: un credit IMM standard e mai avantajos.`,
+        pro: tr("Cifră de afaceri anualizată de {a}: profil de firmă mică, potrivit microfinanțării rapide.", { a: ron(x.annualizedRevenue) }),
+        con: tr("CA anualizată de {a} depășește profilul tipic de microcredit: un credit IMM standard e mai avantajos.", { a: ron(x.annualizedRevenue) }),
       },
       {
         weight: 10,
         fit: x.finalScore >= 50 && x.finalScore <= 72 ? 1 : x.finalScore > 72 ? 0.5 : 0.3,
-        pro: `Scorul ${num(x.finalScore)} se încadrează în banda 50–70 vizată de microfinanțare, fără garanții imobiliare grele.`,
-        con: `Cu scorul ${num(x.finalScore)} firma se califică probabil pentru produse IMM standard, cu sume mai mari.`,
+        pro: tr("Scorul {a} se încadrează în banda 50–70 vizată de microfinanțare, fără garanții imobiliare grele.", { a: num(x.finalScore) }),
+        con: tr("Cu scorul {a} firma se califică probabil pentru produse IMM standard, cu sume mai mari.", { a: num(x.finalScore) }),
       },
     ],
   },
   {
     id: "bt-investitii",
     bank: "Banca Transilvania",
-    product: "Credit IMM Investiții BT (până la 2.500.000 RON)",
+    product: tr("Credit IMM Investiții BT (până la 2.500.000 RON)"),
     kind: "investitie",
-    idealFor: "Firme cu istoric solid (scor ≥ 65, DSCR ≥ 1,2) care finanțează investiții sau capital de lucru.",
+    idealFor: tr("Firme cu istoric solid (scor ≥ 65, DSCR ≥ 1,2) care finanțează investiții sau capital de lucru."),
     minScore: 65,
     minDscr: 1.2,
     minOwnPct: 10,
@@ -290,9 +291,9 @@ export const BANK_PRODUCTS: Product[] = [
   {
     id: "ing-afaceri",
     bank: "ING Bank România",
-    product: "Credit Afaceri / Linie de Credit ING (până la 1.500.000 RON)",
+    product: tr("Credit Afaceri / Linie de Credit ING (până la 1.500.000 RON)"),
     kind: "capital_lucru",
-    idealFor: "Fluxuri digitale curate, volatilitate scăzută și clienți diversificați (client #1 sub 40%), scor ≥ 70.",
+    idealFor: tr("Fluxuri digitale curate, volatilitate scăzută și clienți diversificați (client #1 sub 40%), scor ≥ 70."),
     minScore: 70,
     minDscr: 1.25,
     minOwnPct: 0,
@@ -308,17 +309,17 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 13,
         fit: x.topClientSharePct < 40 ? 1 : x.topClientSharePct < 50 ? 0.4 : 0.1,
-        pro: `Portofoliu diversificat: clientul #1 are ${pct(x.topClientSharePct)} din vânzări (prag ING: sub 40%).`,
-        con: `Clientul #1 are ${pct(x.topClientSharePct)} din vânzări, peste pragul de 40%: diversifică portofoliul înainte de aplicare.`,
+        pro: tr("Portofoliu diversificat: clientul #1 are {a} din vânzări (prag ING: sub 40%).", { a: pct(x.topClientSharePct) }),
+        con: tr("Clientul #1 are {a} din vânzări, peste pragul de 40%: diversifică portofoliul înainte de aplicare.", { a: pct(x.topClientSharePct) }),
       },
     ],
   },
   {
     id: "raiffeisen-investitii",
     bank: "Raiffeisen Bank România",
-    product: "Credit de Investiții / Capital de Lucru IMM",
+    product: tr("Credit de Investiții / Capital de Lucru IMM"),
     kind: "investitie",
-    idealFor: "Extindere sau tehnologie, cu aport propriu solid (≥ 20%) și scor ≥ 68.",
+    idealFor: tr("Extindere sau tehnologie, cu aport propriu solid (≥ 20%) și scor ≥ 68."),
     minScore: 68,
     minDscr: 1.25,
     minOwnPct: 20,
@@ -333,17 +334,17 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 10,
         fit: (x.ownContributionPct ?? 0) >= 25 ? 1 : (x.ownContributionPct ?? 0) >= 20 ? 0.8 : 0.3,
-        pro: `Aport propriu de ${pct(x.ownContributionPct ?? 0)}: implicarea acționarilor reduce riscul băncii și poate scădea marja.`,
-        con: `Raiffeisen cere un aport solid (≥ 20%); acum ai ${pct(x.ownContributionPct ?? 0)}.`,
+        pro: tr("Aport propriu de {a}: implicarea acționarilor reduce riscul băncii și poate scădea marja.", { a: pct(x.ownContributionPct ?? 0) }),
+        con: tr("Raiffeisen cere un aport solid (≥ 20%); acum ai {a}.", { a: pct(x.ownContributionPct ?? 0) }),
       },
     ],
   },
   {
     id: "cec-garantii",
     bank: "CEC Bank",
-    product: "Credit IMM cu garanții de stat (FNGCIMM, ex. IMM Invest Plus / scheme active) & Capital de Lucru",
+    product: tr("Credit IMM cu garanții de stat (FNGCIMM, ex. IMM Invest Plus / scheme active) & Capital de Lucru"),
     kind: "garantat",
-    idealFor: "Firme sezoniere (HoReCa, agricultură, producție) sau cu aport propriu mai mic (10–15%), scor ≥ 55.",
+    idealFor: tr("Firme sezoniere (HoReCa, agricultură, producție) sau cu aport propriu mai mic (10–15%), scor ≥ 55."),
     minScore: 55,
     minDscr: 1.1,
     minOwnPct: 10,
@@ -352,7 +353,7 @@ export const BANK_PRODUCTS: Product[] = [
     rateLabel: "~8,2–10,0%/an",
     ownLabel: "10–15%",
     maturityMonths: [12, 84],
-    maturityLabel: "până la 72–84 luni",
+    maturityLabel: tr("până la 72–84 luni"),
     repayment: "anuitate",
     maxRevenueShare: 0.5,
     maxAbsolute: 5_000_000,
@@ -361,24 +362,24 @@ export const BANK_PRODUCTS: Product[] = [
         weight: 15,
         fit: x.sector.seasonal ? 1 : x.seasonalityRatio >= 1.5 ? 0.75 : 0.3,
         pro: x.sector.seasonal
-          ? `Sector sezonier (${x.sector.shortLabel}): schemele cu garanție de stat acceptă cash-flow-ul neuniform din extrasezon.`
-          : `Sezonalitate pronunțată (${num(x.seasonalityRatio)}× vârf/minim): garanția de stat compensează lunile slabe.`,
-        con: `Firma nu e sezonieră (${x.sector.shortLabel}, ${num(x.seasonalityRatio)}×): avantajul garanției de stat contează mai puțin.`,
+          ? tr("Sector sezonier ({a}): schemele cu garanție de stat acceptă cash-flow-ul neuniform din extrasezon.", { a: tr(x.sector.shortLabel) })
+          : tr("Sezonalitate pronunțată ({a}× vârf/minim): garanția de stat compensează lunile slabe.", { a: num(x.seasonalityRatio) }),
+        con: tr("Firma nu e sezonieră ({a}, {b}×): avantajul garanției de stat contează mai puțin.", { a: tr(x.sector.shortLabel), b: num(x.seasonalityRatio) }),
       },
       {
         weight: 10,
         fit: (x.ownContributionPct ?? 0) >= 10 && (x.ownContributionPct ?? 0) < 20 ? 1 : (x.ownContributionPct ?? 0) >= 20 ? 0.7 : 0.4,
-        pro: `Aportul propriu de ${pct(x.ownContributionPct ?? 0)} e suficient: garanția FNGCIMM acoperă până la 80–90% din credit.`,
-        con: `Aportul de ${pct(x.ownContributionPct ?? 0)} e sub minimul de 10% cerut și în schemele garantate.`,
+        pro: tr("Aportul propriu de {a} e suficient: garanția FNGCIMM acoperă până la 80–90% din credit.", { a: pct(x.ownContributionPct ?? 0) }),
+        con: tr("Aportul de {a} e sub minimul de 10% cerut și în schemele garantate.", { a: pct(x.ownContributionPct ?? 0) }),
       },
     ],
   },
   {
     id: "unicredit-leasing",
     bank: "UniCredit Bank România",
-    product: "Credit de Investiții / Leasing Echipamente & Auto",
+    product: tr("Credit de Investiții / Leasing Echipamente & Auto"),
     kind: "leasing",
-    idealFor: "Achiziția de utilaje, echipamente sau flotă — bunul finanțat este chiar garanția.",
+    idealFor: tr("Achiziția de utilaje, echipamente sau flotă — bunul finanțat este chiar garanția."),
     minScore: 62,
     minDscr: 1.2,
     minOwnPct: 15,
@@ -394,8 +395,8 @@ export const BANK_PRODUCTS: Product[] = [
       {
         weight: 15,
         fit: x.purpose === "growth" ? 1 : 0.15,
-        pro: "Destinația este echipamente / utilaje: bunul finanțat servește drept garanție, fără ipotecă imobiliară.",
-        con: "Leasingul se potrivește doar achiziției de echipamente, utilaje sau autovehicule.",
+        pro: tr("Destinația este echipamente / utilaje: bunul finanțat servește drept garanție, fără ipotecă imobiliară."),
+        con: tr("Leasingul se potrivește doar achiziției de echipamente, utilaje sau autovehicule."),
       },
     ],
   },
@@ -421,7 +422,7 @@ function maxEligibleAmount(p: Product, x: BankMatchInput) {
     // Receivables portfolio ≈ annual revenue × DSO / 365; the factor advances ~80% of it.
     const receivables = (x.annualizedRevenue * x.dsoDays) / 365;
     const amount = Math.min(receivables * 0.8, p.maxAbsolute);
-    return { amount: round10k(amount), basis: `~80% din creanțele curente (${ron(receivables)} = CA × DSO / 365)` };
+    return { amount: round10k(amount), basis: tr("~80% din creanțele curente ({a} = CA × DSO / 365)", { a: ron(receivables) }) };
   }
   const rate = (p.rateRangePct[0] + p.rateRangePct[1]) / 200;
   const covenant = Math.max(p.minDscr, 1.2);
@@ -429,8 +430,8 @@ function maxEligibleAmount(p: Product, x: BankMatchInput) {
   const byDscr =
     p.repayment === "dobanda" ? (freeInstallment * 12) / rate : principalForInstallment(freeInstallment, rate, p.maturityMonths[1]);
   const amount = Math.min(byDscr, revenueCap, p.maxAbsolute);
-  const binding = amount === byDscr ? `capacitatea de plată la DSCR ${num(covenant)}×` : amount === revenueCap ? `${Math.round(p.maxRevenueShare * 100)}% din CA anualizată` : "plafonul orientativ al produsului";
-  return { amount: round10k(amount), basis: `limitat de ${binding}` };
+  const binding = amount === byDscr ? tr("capacitatea de plată la DSCR {a}×", { a: num(covenant) }) : amount === revenueCap ? tr("{a}% din CA anualizată", { a: Math.round(p.maxRevenueShare * 100) }) : "plafonul orientativ al produsului";
+  return { amount: round10k(amount), basis: tr("limitat de {a}", { a: binding }) };
 }
 
 /**
@@ -456,11 +457,11 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
     {
       weight: 30,
       fit: thresholdFit(x.finalScore, p.minScore, 15),
-      pro: `ScorFinal ${num(x.finalScore)}, confortabil peste pragul orientativ al produsului (${p.minScore}).`,
+      pro: tr("ScorFinal {a}, confortabil peste pragul orientativ al produsului ({b}).", { a: num(x.finalScore), b: p.minScore }),
       con:
         x.finalScore >= p.minScore
-          ? `ScorFinal ${num(x.finalScore)}, doar puțin peste pragul orientativ de ${p.minScore}: încă ${num(p.minScore + 15 - x.finalScore)} puncte din planul de 30–90 de zile ar da o marjă confortabilă.`
-          : `ScorFinal ${num(x.finalScore)} sub pragul orientativ de ${p.minScore}: urmează planul de 30–90 de zile pentru a câștiga ${num(p.minScore - x.finalScore)} puncte.`,
+          ? tr("ScorFinal {a}, doar puțin peste pragul orientativ de {b}: încă {c} puncte din planul de 30–90 de zile ar da o marjă confortabilă.", { a: num(x.finalScore), b: p.minScore, c: num(p.minScore + 15 - x.finalScore) })
+          : tr("ScorFinal {a} sub pragul orientativ de {b}: urmează planul de 30–90 de zile pentru a câștiga {c} puncte.", { a: num(x.finalScore), b: p.minScore, c: num(p.minScore - x.finalScore) }),
     },
   ];
   if (p.minDscr > 0 && dscrAtProduct !== null) {
@@ -468,26 +469,26 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
     criteria.push({
       weight: 20,
       fit: thresholdFit(dscrAtProduct, p.minDscr, 0.35),
-      pro: requested > 0 ? `DSCR ${num(dscrAtProduct)}× cu rata estimată de ${ron(cost)}/lună (minim cerut ${num(p.minDscr)}×).` : `DSCR actual ${num(dscrAtProduct)}× (minim cerut ${num(p.minDscr)}×).`,
+      pro: requested > 0 ? tr("DSCR {a}× cu rata estimată de {b}/lună (minim cerut {c}×).", { a: num(dscrAtProduct), b: ron(cost), c: num(p.minDscr) }) : tr("DSCR actual {a}× (minim cerut {b}×).", { a: num(dscrAtProduct), b: num(p.minDscr) }),
       con: tight
-        ? `DSCR ${num(dscrAtProduct)}× la limita covenant-ului de ${num(p.minDscr)}×: orice scădere a marjei îl împinge sub prag — prelungește maturitatea sau redu suma.`
+        ? tr("DSCR {a}× la limita covenant-ului de {b}×: orice scădere a marjei îl împinge sub prag — prelungește maturitatea sau redu suma.", { a: num(dscrAtProduct), b: num(p.minDscr) })
         : requested > 0
-          ? `DSCR ${num(dscrAtProduct)}× la suma cerută, sub covenant-ul de ${num(p.minDscr)}×: redu suma la max. ${ron(maxAmount)} sau prelungește maturitatea.`
-          : `DSCR ${num(dscrAtProduct)}× sub covenant-ul de ${num(p.minDscr)}×: crește marja operațională sau redu ratele existente.`,
+          ? tr("DSCR {a}× la suma cerută, sub covenant-ul de {b}×: redu suma la max. {c} sau prelungește maturitatea.", { a: num(dscrAtProduct), b: num(p.minDscr), c: ron(maxAmount) })
+          : tr("DSCR {a}× sub covenant-ul de {b}×: crește marja operațională sau redu ratele existente.", { a: num(dscrAtProduct), b: num(p.minDscr) }),
     });
   }
   criteria.push({
     weight: 20,
     fit: x.purpose ? p.purposeFit[x.purpose] : 0.5,
-    pro: x.purpose ? `Destinația declarată (${PURPOSE_LABEL[x.purpose]}) corespunde exact acestui tip de produs.` : "Destinația nu este încă declarată.",
-    con: x.purpose ? `Destinația „${PURPOSE_LABEL[x.purpose]}” nu este specifică pentru ${KIND_LABEL[p.kind].toLowerCase()}.` : "Completează destinația finanțării în pasul 3.",
+    pro: x.purpose ? tr("Destinația declarată ({a}) corespunde exact acestui tip de produs.", { a: tr(PURPOSE_LABEL[x.purpose]) }) : tr("Destinația nu este încă declarată."),
+    con: x.purpose ? tr("Destinația „{a}” nu este specifică pentru {b}.", { a: tr(PURPOSE_LABEL[x.purpose]), b: tr(KIND_LABEL[p.kind]).toLowerCase() }) : tr("Completează destinația finanțării în pasul 3."),
   });
   if (p.minOwnPct > 0) {
     criteria.push({
       weight: 10,
       fit: own >= p.minOwnPct ? 1 : (own / p.minOwnPct) * 0.6,
-      pro: `Aport propriu ${pct(own)} ≥ ${p.minOwnPct}% cerut.`,
-      con: `Aport propriu ${pct(own)}, sub minimul orientativ de ${p.minOwnPct}%: completează avansul înainte de depunere.`,
+      pro: tr("Aport propriu {a} ≥ {b}% cerut.", { a: pct(own), b: p.minOwnPct }),
+      con: tr("Aport propriu {a}, sub minimul orientativ de {b}%: completează avansul înainte de depunere.", { a: pct(own), b: p.minOwnPct }),
     });
   }
   criteria.push({
@@ -495,9 +496,9 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
     fit: requested <= 0 ? 0.5 : requested <= maxAmount ? 1 : clamp(1 - (requested - maxAmount) / Math.max(maxAmount, 1), 0, 1) * 0.7,
     pro:
       requested > 0
-        ? `Suma cerută (${ron(requested)}, ${pct(leverage * 100)} din CA) se încadrează în plafonul estimat de ${ron(maxAmount)}.`
-        : `Plafon estimat pentru firmă: ${ron(maxAmount)}.`,
-    con: requested > 0 ? `Suma cerută (${ron(requested)}) depășește plafonul estimat de ${ron(maxAmount)}: etapizează finanțarea.` : "Completează suma solicitată în pasul 3.",
+        ? tr("Suma cerută ({a}, {b} din CA) se încadrează în plafonul estimat de {c}.", { a: ron(requested), b: pct(leverage * 100), c: ron(maxAmount) })
+        : tr("Plafon estimat pentru firmă: {a}.", { a: ron(maxAmount) }),
+    con: requested > 0 ? tr("Suma cerută ({a}) depășește plafonul estimat de {b}: etapizează finanțarea.", { a: ron(requested), b: ron(maxAmount) }) : tr("Completează suma solicitată în pasul 3."),
   });
   criteria.push(...p.signals(x));
 
@@ -506,14 +507,14 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
   const conditions: string[] = [];
   if (x.legalCritical) {
     match *= 0.3;
-    conditions.push("portal.just.ro: există un dosar critic (insolvență / infracțiune economică) — băncile resping de regulă cererea până la clarificare.");
+    conditions.push(tr("portal.just.ro: există un dosar critic (insolvență / infracțiune economică) — băncile resping de regulă cererea până la clarificare."));
   } else if (x.legalScore < 60) {
     match *= 0.75;
-    conditions.push(`Scor juridic ${num(x.legalScore)}/100: pregătește o notă explicativă pe fiecare dosar activ din portal.just.ro.`);
+    conditions.push(tr("Scor juridic {a}/100: pregătește o notă explicativă pe fiecare dosar activ din portal.just.ro.", { a: num(x.legalScore) }));
   } else if (x.legalScore < 80) {
     match *= 0.92;
   }
-  if (x.legalPending) conditions.push("Verificarea portal.just.ro nu a fost rulată: banca o face oricum la depunere.");
+  if (x.legalPending) conditions.push(tr("Verificarea portal.just.ro nu a fost rulată: banca o face oricum la depunere."));
 
   const eligible =
     x.finalScore >= p.minScore && (p.minDscr === 0 || (dscrAtProduct ?? 0) >= p.minDscr) && own >= p.minOwnPct && !x.legalCritical;
@@ -542,15 +543,15 @@ function evaluateProduct(p: Product, x: BankMatchInput): BankRecommendation {
     eligible,
     maxAmount,
     maxAmountBasis: basis,
-    maturityLabel: p.maturityLabel ?? (m0 === m1 ? `${m0} luni` : `${m0}–${m1} luni`),
-    rateLabel: p.rateLabel ?? `dobândă orientativă ${num(p.rateRangePct[0])}–${num(p.rateRangePct[1])}%/an`,
+    maturityLabel: p.maturityLabel ?? (m0 === m1 ? tr("{n} luni", { n: m0 }) : tr("{a}–{b} luni", { a: m0, b: m1 })),
+    rateLabel: p.rateLabel ?? tr("dobândă orientativă {a}–{b}%/an", { a: num(p.rateRangePct[0]), b: num(p.rateRangePct[1]) }),
     rateRangePct: p.rateRangePct,
     minOwnPct: p.minOwnPct,
-    minOwnLabel: p.ownLabel ?? (p.minOwnPct > 0 ? `min. ${p.minOwnPct}%` : "fără aport minim"),
+    minOwnLabel: p.ownLabel ?? (p.minOwnPct > 0 ? `min. ${p.minOwnPct}%` : tr("fără aport minim")),
     minDscr: p.minDscr,
     dscrAtProduct: dscrAtProduct === null ? null : Math.round(dscrAtProduct * 100) / 100,
     monthlyCost: Math.round(cost),
-    reasons: reasons.length ? reasons : ["Potrivire parțială: niciun criteriu nu este îndeplinit integral încă."],
+    reasons: reasons.length ? reasons : [tr("Potrivire parțială: niciun criteriu nu este îndeplinit integral încă.")],
     conditions,
   };
 }
@@ -574,10 +575,10 @@ export function matchBanks(x: BankMatchInput): BankMatchResult {
 
   const creditReady = x.finalScore >= CREDIT_READY_MIN_SCORE && !x.legalCritical;
   const readinessNote = creditReady
-    ? `ScorFinal ${num(x.finalScore)} ≥ ${CREDIT_READY_MIN_SCORE}: firma poate pregăti dosarul pentru produsele de mai jos.`
+    ? tr("ScorFinal {a} ≥ {b}: firma poate pregăti dosarul pentru produsele de mai jos.", { a: num(x.finalScore), b: CREDIT_READY_MIN_SCORE })
     : x.legalCritical
-      ? "Firma nu este încă „Credit Ready”: un dosar critic în portal.just.ro blochează practic orice finanțare. Clarifică-l, apoi refă evaluarea."
-      : `Firma nu este încă „Credit Ready” (ScorFinal ${num(x.finalScore)} < ${CREDIT_READY_MIN_SCORE}). Parcurge întâi planul de 30–90 de zile, apoi aplică — o cerere respinsă rămâne în istoricul băncii.`;
+      ? tr("Firma nu este încă „Credit Ready”: un dosar critic în portal.just.ro blochează practic orice finanțare. Clarifică-l, apoi refă evaluarea.")
+      : tr("Firma nu este încă „Credit Ready” (ScorFinal {a} < {b}). Parcurge întâi planul de 30–90 de zile, apoi aplică — o cerere respinsă rămâne în istoricul băncii.", { a: num(x.finalScore), b: CREDIT_READY_MIN_SCORE });
 
   return { top, alternatives, all, creditReady, readinessNote, disclaimer: BANK_DISCLAIMER };
 }

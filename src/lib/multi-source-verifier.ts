@@ -25,6 +25,7 @@ import {
   type RealSourceStatus,
 } from "./real-company-sources.ts";
 import { round1 } from "./util.ts";
+import { tr } from "./i18n/tr.ts";
 
 export type VerificationSourceId = RealSourceId;
 
@@ -78,18 +79,18 @@ const ron = (n: number) => `${new Intl.NumberFormat("ro-RO", { maximumFractionDi
 
 /** portal.just.ro: the internal legal score (severity levels, identity confidence, the user's confirmations). */
 export function scorePortal(legal: LegalCheckResult | null): Scored {
-  if (!legal) return unscored("Verificarea portal.just.ro nu a rulat încă.");
+  if (!legal) return unscored(tr("Verificarea portal.just.ro nu a rulat încă."));
   if (legal.isFallback) return unscored(legal.message);
   const details = legal.cases
     .filter((c) => c.severity > 0)
     .slice(0, 6)
     .map((c) => `${c.numar} · ${c.kindLabel} · ${c.severityLabel} (${c.matchedBy === "firma" ? "firmă" : "administrator"})`);
-  if (legal.uncertainCount) details.push(`${legal.uncertainCount} dosar(e) ale administratorului de confirmat (posibili omonimi).`);
+  if (legal.uncertainCount) details.push(tr("{a} dosar(e) ale administratorului de confirmat (posibili omonimi).", { a: legal.uncertainCount }));
   const status = legal.integrityKillSwitch ? "critical" : legal.legalScore < 100 ? "warning" : "clean";
   return {
     status,
     score: legal.legalScore,
-    summary: legal.cases.length ? `${legal.cases.length} dosare pe numele exact · scor legal ${legal.legalScore}/100.` : "Niciun dosar pe numele exact al firmei sau al administratorului.",
+    summary: legal.cases.length ? tr("{a} dosare pe numele exact · scor legal {b}/100.", { a: legal.cases.length, b: legal.legalScore }) : tr("Niciun dosar pe numele exact al firmei sau al administratorului."),
     details,
   };
 }
@@ -98,70 +99,70 @@ export function scorePortal(legal: LegalCheckResult | null): Scored {
 export function scoreAnafGeneral(real: CompanyRealData): Scored {
   const src = real.sources.find((s) => s.sourceId === "anaf_general");
   const a = real.anaf;
-  if (!a) return src?.status === "not_found" ? { ...unscored(src.rawSummary, ["Verifică CUI-ul introdus în Pasul 1."]), status: "warning" } : unscored(src?.rawSummary ?? "ANAF nu a fost interogat.");
+  if (!a) return src?.status === "not_found" ? { ...unscored(src.rawSummary, [tr("Verifică CUI-ul introdus în Pasul 1.")]), status: "warning" } : unscored(src?.rawSummary ?? tr("ANAF nu a fost interogat."));
   const details = [
-    `${a.denumire} · ${a.nrRegCom || "fără nr. Reg. Com."} · CAEN ${a.codCaen || "—"}`,
+    `${a.denumire} · ${a.nrRegCom || tr("fără nr. Reg. Com.")} · CAEN ${a.codCaen || "—"}`,
     a.adresa,
-    a.scpTva ? "Înregistrată în scopuri de TVA." : "Neînregistrată în scopuri de TVA.",
+    a.scpTva ? tr("Înregistrată în scopuri de TVA.") : tr("Neînregistrată în scopuri de TVA."),
     a.tvaLaIncasare ? "Aplică TVA la încasare." : "",
     a.splitTva ? "Înscrisă în registrul split TVA." : "",
-    a.eFactura ? "Înscrisă în Registrul RO e-Factura." : "Nu figurează în Registrul RO e-Factura.",
-    "Datoriile la bugetul de stat nu sunt publice prin acest serviciu: banca cere certificatul de atestare fiscală.",
+    a.eFactura ? tr("Înscrisă în Registrul RO e-Factura.") : tr("Nu figurează în Registrul RO e-Factura."),
+    tr("Datoriile la bugetul de stat nu sunt publice prin acest serviciu: banca cere certificatul de atestare fiscală."),
   ].filter(Boolean);
   if (a.inactiv) return { status: "critical", score: 0, summary: `Contribuabil INACTIV fiscal${a.dataInactivare ? ` din ${a.dataInactivare}` : ""} — blocaj bancar major.`, details };
-  if (a.dataRadiere) return { status: "critical", score: 0, summary: `Firmă radiată (${a.dataRadiere}).`, details };
-  return { status: "clean", score: 100, summary: "Activă fiscal, fără observații pe registrele publice ANAF.", details };
+  if (a.dataRadiere) return { status: "critical", score: 0, summary: tr("Firmă radiată ({a}).", { a: a.dataRadiere }), details };
+  return { status: "clean", score: 100, summary: tr("Activă fiscal, fără observații pe registrele publice ANAF."), details };
 }
 
 /** ONRC + insolvency: 0 = deregistered / dissolved / suspended / inactive / insolvency case · 50 < 12 months · 75 < 24 months · 100. */
 export function scoreOnrcBpi(real: CompanyRealData): Scored {
   const src = real.sources.find((s) => s.sourceId === "onrc_bpi");
   const o = real.onrc;
-  if (!o) return unscored(src?.rawSummary ?? "Starea juridică nu a fost verificată.");
+  if (!o) return unscored(src?.rawSummary ?? tr("Starea juridică nu a fost verificată."));
   const details = [
-    `Stare înregistrare: ${o.stareInregistrare || "—"}${o.nrRegCom ? ` · ${o.nrRegCom}` : ""}.`,
-    o.insolventaVerificata ? (o.insolventa.length ? `Dosare de insolvență: ${o.insolventa.join("; ")}.` : "Fără dosare de insolvență pe numele firmei în portal.just.ro.") : "Insolvența nu a putut fi verificată (portal.just.ro indisponibil).",
-    "BPI (bpi.onrc.ro) nu are API public gratuit; procedurile de insolvență se judecă la tribunal și apar în portal.just.ro.",
+    `${tr("Stare înregistrare: {a}", { a: o.stareInregistrare || "—" })}${o.nrRegCom ? ` · ${o.nrRegCom}` : ""}.`,
+    o.insolventaVerificata ? (o.insolventa.length ? tr("Dosare de insolvență: {a}.", { a: o.insolventa.join("; ") }) : tr("Fără dosare de insolvență pe numele firmei în portal.just.ro.")) : tr("Insolvența nu a putut fi verificată (portal.just.ro indisponibil)."),
+    tr("BPI (bpi.onrc.ro) nu are API public gratuit; procedurile de insolvență se judecă la tribunal și apar în portal.just.ro."),
   ];
-  if (o.stareJuridica !== "În funcțiune") return { status: "critical", score: 0, summary: `Stare juridică: ${o.stareJuridica} — firma nu poate contracta credite.`, details };
-  if (o.insolventa.length) return { status: "critical", score: 0, summary: `Procedură de insolvență pe numele firmei (${o.insolventa.length} dosar(e)).`, details };
+  if (o.stareJuridica !== "În funcțiune") return { status: "critical", score: 0, summary: tr("Stare juridică: {a} — firma nu poate contracta credite.", { a: tr(o.stareJuridica) }), details };
+  if (o.insolventa.length) return { status: "critical", score: 0, summary: tr("Procedură de insolvență pe numele firmei ({a} dosar(e)).", { a: o.insolventa.length }), details };
   const m = o.vechimeLuni;
-  if (m === null) return { status: "warning", score: null, summary: "În funcțiune; data înregistrării lipsește din registru.", details };
+  if (m === null) return { status: "warning", score: null, summary: tr("În funcțiune; data înregistrării lipsește din registru."), details };
   const age = m >= 24 ? `${Math.floor(m / 12)} ani` : `${m} luni`;
-  if (m < 12) return { status: "warning", score: 50, summary: `În funcțiune, firmă nouă (${age}) — majoritatea băncilor cer minimum 12 luni.`, details };
-  if (m < 24) return { status: "warning", score: 75, summary: `În funcțiune, vechime ${age} (băncile preferă peste 24 de luni).`, details };
-  return { status: "clean", score: 100, summary: `În funcțiune, vechime ${age}.`, details };
+  if (m < 12) return { status: "warning", score: 50, summary: tr("În funcțiune, firmă nouă ({a}) — majoritatea băncilor cer minimum 12 luni.", { a: age }), details };
+  if (m < 24) return { status: "warning", score: 75, summary: tr("În funcțiune, vechime {a} (băncile preferă peste 24 de luni).", { a: age }), details };
+  return { status: "clean", score: 100, summary: tr("În funcțiune, vechime {a}.", { a: age }), details };
 }
 
 /** Balance sheet: 10 = negative equity · 40 = net loss · 70 = debts > 3× equity · 85 = turnover down > 20% · 100. */
 export function scoreBilant(real: CompanyRealData): Scored {
   const src = real.sources.find((s) => s.sourceId === "anaf_bilant");
   const [y, prev] = real.bilant;
-  if (!y) return unscored(src?.rawSummary ?? "Bilanțul nu a fost interogat.");
+  if (!y) return unscored(src?.rawSummary ?? tr("Bilanțul nu a fost interogat."));
   const result = netResult(y);
   const leverage = y.capitaluriProprii > 0 ? y.datorii / y.capitaluriProprii : null;
   const drop = prev && prev.cifraAfaceri > 0 ? (y.cifraAfaceri - prev.cifraAfaceri) / prev.cifraAfaceri : null;
   const details = [
-    `Cifră de afaceri ${y.an}: ${ron(y.cifraAfaceri)}${prev ? ` (${prev.an}: ${ron(prev.cifraAfaceri)})` : ""}.`,
+    `${tr("Cifră de afaceri {y}: {v}", { y: y.an, v: ron(y.cifraAfaceri) })}${prev ? ` (${prev.an}: ${ron(prev.cifraAfaceri)})` : ""}.`,
     `Rezultat net: ${ron(result)} · venituri ${ron(y.venituriTotale)} · cheltuieli ${ron(y.cheltuieliTotale)}.`,
     `Capitaluri proprii ${ron(y.capitaluriProprii)} · datorii ${ron(y.datorii)}${leverage !== null ? ` (${leverage.toFixed(1).replace(".", ",")}× capitalurile)` : ""}.`,
-    `${y.salariati} salariați (medie).`,
+    tr("{a} salariați (medie).", { a: y.salariati }),
   ];
-  if (y.capitaluriProprii < 0) return { status: "critical", score: 10, summary: `Capitaluri proprii negative în ${y.an} — majoritatea băncilor resping dosarul până la majorarea capitalului.`, details };
-  if (result < 0) return { status: "warning", score: 40, summary: `Pierdere netă de ${ron(-result)} în ${y.an}.`, details };
-  if (leverage !== null && leverage > 3) return { status: "warning", score: 70, summary: `Profit în ${y.an}, dar datoriile sunt de ${leverage.toFixed(1).replace(".", ",")}× capitalurile proprii.`, details };
-  if (drop !== null && drop < -0.2) return { status: "warning", score: 85, summary: `Profit în ${y.an}, dar cifra de afaceri a scăzut cu ${Math.round(-drop * 100)}% față de ${prev!.an}.`, details };
-  return { status: "clean", score: 100, summary: `Profit net de ${ron(result)} în ${y.an}, capitaluri proprii pozitive.`, details };
+  if (y.capitaluriProprii < 0) return { status: "critical", score: 10, summary: tr("Capitaluri proprii negative în {a} — majoritatea băncilor resping dosarul până la majorarea capitalului.", { a: y.an }), details };
+  if (result < 0) return { status: "warning", score: 40, summary: tr("Pierdere netă de {a} în {b}.", { a: ron(-result), b: y.an }), details };
+  if (leverage !== null && leverage > 3) return { status: "warning", score: 70, summary: tr("Profit în {a}, dar datoriile sunt de {b}× capitalurile proprii.", { a: y.an, b: leverage.toFixed(1).replace(".", ",") }), details };
+  if (drop !== null && drop < -0.2) return { status: "warning", score: 85, summary: tr("Profit în {a}, dar cifra de afaceri a scăzut cu {b}% față de {c}.", { a: y.an, b: Math.round(-drop * 100), c: prev!.an }), details };
+  return { status: "clean", score: 100, summary: tr("Profit net de {a} în {b}, capitaluri proprii pozitive.", { a: ron(result), b: y.an }), details };
 }
 
 /** VIES: 100 = valid · 70 = VAT payer without a valid intra-EU code · not scored when the firm is not a VAT payer. */
 export function scoreVies(real: CompanyRealData): Scored {
   const src = real.sources.find((s) => s.sourceId === "vies_eu");
-  if (!real.vies) return unscored(src?.rawSummary ?? "VIES nu a fost interogat.");
-  const details = [real.vies.name && `Nume VIES: ${real.vies.name}`, real.vies.address && `Adresă VIES: ${real.vies.address}`].filter(Boolean) as string[];
+  if (!real.vies) return unscored(src?.rawSummary ?? tr("VIES nu a fost interogat."));
+  const details = [real.vies.name && `Nume VIES: ${real.vies.name}`, real.vies.address && tr("Adresă VIES: {a}", { a: real.vies.address })].filter(Boolean) as string[];
   if (real.vies.isValid) return { status: "clean", score: 100, summary: "Cod TVA intracomunitar valid (VIES).", details };
-  if (real.anaf?.scpTva) return { status: "warning", score: 70, summary: "Plătitoare de TVA în România, dar fără cod valid în VIES (nu poate factura intracomunitar fără TVA).", details };
-  return unscored("Neînregistrată în VIES — neaplicabil pentru o firmă neplătitoare de TVA.", details);
+  if (real.anaf?.scpTva) return { status: "warning", score: 70, summary: tr("Plătitoare de TVA în România, dar fără cod valid în VIES (nu poate factura intracomunitar fără TVA)."), details };
+  return unscored(tr("Neînregistrată în VIES — neaplicabil pentru o firmă neplătitoare de TVA."), details);
 }
 
 // ---------------------------------------------------------------------------

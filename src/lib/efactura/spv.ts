@@ -14,6 +14,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import { invoiceXmlFromZip } from "./zip.ts";
+import { siteUrl } from "../site-url.ts";
 
 export const SPV_TOKEN_COOKIE = "ak_spv_token";
 export const SPV_STATE_COOKIE = "ak_spv_state";
@@ -28,10 +29,18 @@ export interface SpvConfig {
   redirectUri: string;
 }
 
-export function spvConfig(): SpvConfig | null {
+/** ANAF can be slow or block cloud IPs: never let one call hang the serverless function. */
+const ANAF_TIMEOUT_MS = 20_000;
+
+/**
+ * `origin` = the current request origin, used only when ANAF_OAUTH_REDIRECT_URI is not set:
+ * the redirect then becomes <site>/api/spv/callback (it must still match the URL registered at ANAF).
+ */
+export function spvConfig(origin?: string): SpvConfig | null {
   const clientId = process.env.ANAF_OAUTH_CLIENT_ID ?? "";
   const clientSecret = process.env.ANAF_OAUTH_CLIENT_SECRET ?? "";
-  const redirectUri = process.env.ANAF_OAUTH_REDIRECT_URI ?? "";
+  const base = siteUrl(origin);
+  const redirectUri = process.env.ANAF_OAUTH_REDIRECT_URI || (base ? `${base}/api/spv/callback` : "");
   return clientId && clientSecret && redirectUri ? { clientId, clientSecret, redirectUri } : null;
 }
 
@@ -49,7 +58,7 @@ export async function exchangeCode(cfg: SpvConfig, code: string): Promise<{ acce
     redirect_uri: cfg.redirectUri,
     token_content_type: "jwt",
   });
-  const r = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, cache: "no-store" });
+  const r = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, cache: "no-store", signal: AbortSignal.timeout(ANAF_TIMEOUT_MS) });
   const j = (await r.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error_description?: string; error?: string };
   if (!r.ok || !j.access_token) throw new Error(j.error_description || j.error || `ANAF OAuth a răspuns HTTP ${r.status}.`);
   return { accessToken: j.access_token, expiresIn: Number(j.expires_in ?? 3600) };
@@ -94,7 +103,7 @@ interface ListResponse {
 }
 
 async function anafGet(token: string, url: string) {
-  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(ANAF_TIMEOUT_MS) });
   if (r.status === 401 || r.status === 403) throw new Error("Sesiunea SPV a expirat: reconectează-te cu certificatul digital.");
   return r;
 }
